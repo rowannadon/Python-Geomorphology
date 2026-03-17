@@ -1,0 +1,16 @@
+{
+  "name": "granite",
+  "river_downcutting": 1.4,
+  "max_delta": 0.10,
+  "erosion_iterations": 50000,
+  "erosion_inertia": 0.25,
+  "erosion_capacity": 6.5,
+  "erosion_deposition_rate": 0.28,
+  "erosion_rate": 0.26,
+  "erosion_evaporation": 0.987,
+  "erosion_gravity": 10.5,
+  "erosion_max_lifetime": 55,
+  "erosion_step_size": 0.28,
+  "erosion_blur_iterations": 1,
+  "base_albedo_rgb": [158, 153, 143]
+}

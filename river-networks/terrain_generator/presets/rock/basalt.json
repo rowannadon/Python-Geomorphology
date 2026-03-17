@@ -1,0 +1,16 @@
+{
+  "name": "basalt",
+  "river_downcutting": 1.35,
+  "max_delta": 0.075,
+  "erosion_iterations": 48000,
+  "erosion_inertia": 0.27,
+  "erosion_capacity": 5.8,
+  "erosion_deposition_rate": 0.24,
+  "erosion_rate": 0.22,
+  "erosion_evaporation": 0.989,
+  "erosion_gravity": 10.8,
+  "erosion_max_lifetime": 54,
+  "erosion_step_size": 0.27,
+  "erosion_blur_iterations": 1,
+  "base_albedo_rgb": [82, 76, 71]
+}

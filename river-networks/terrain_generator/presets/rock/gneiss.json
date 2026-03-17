@@ -1,0 +1,16 @@
+{
+  "name": "gneiss",
+  "river_downcutting": 1.55,
+  "max_delta": 0.06,
+  "erosion_iterations": 68000,
+  "erosion_inertia": 0.21,
+  "erosion_capacity": 8.6,
+  "erosion_deposition_rate": 0.38,
+  "erosion_rate": 0.35,
+  "erosion_evaporation": 0.978,
+  "erosion_gravity": 10.2,
+  "erosion_max_lifetime": 62,
+  "erosion_step_size": 0.31,
+  "erosion_blur_iterations": 1,
+  "base_albedo_rgb": [148, 138, 128]
+}

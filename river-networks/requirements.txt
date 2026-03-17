@@ -1,0 +1,25 @@
+# Core dependencies
+numpy>=1.20.0
+scipy>=1.7.0
+matplotlib>=3.3.0
+Pillow>=8.0.0
+PyQt5>=5.15.0
+PyOpenGL>=3.1.0
+scikit-image>=0.18.0
+
+# Node-based workflow system
+NodeGraphQt>=0.6.0
+
+# Performance optimization (recommended)
+numba>=0.55.0
+
+# UI theming (optional but recommended)
+#pyqtdarktheme>=2.0.0
+
+# Development tools (optional)
+# Uncomment these if you want development/testing tools
+# pytest>=6.0.0
+# pytest-qt>=4.0.0
+# black>=21.0
+# flake8>=3.9.0
+# mypy>=0.900

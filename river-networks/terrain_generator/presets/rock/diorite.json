@@ -1,0 +1,16 @@
+{
+  "name": "diorite",
+  "river_downcutting": 1.5,
+  "max_delta": 0.065,
+  "erosion_iterations": 60000,
+  "erosion_inertia": 0.22,
+  "erosion_capacity": 7.5,
+  "erosion_deposition_rate": 0.3,
+  "erosion_rate": 0.3,
+  "erosion_evaporation": 0.982,
+  "erosion_gravity": 10.3,
+  "erosion_max_lifetime": 60,
+  "erosion_step_size": 0.29,
+  "erosion_blur_iterations": 1,
+  "base_albedo_rgb": [117, 110, 102]
+}

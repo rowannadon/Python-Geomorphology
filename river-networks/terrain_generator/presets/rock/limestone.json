@@ -1,0 +1,16 @@
+{
+  "name": "limestone",
+  "river_downcutting": 1.6,
+  "max_delta": 0.055,
+  "erosion_iterations": 70000,
+  "erosion_inertia": 0.18,
+  "erosion_capacity": 9.5,
+  "erosion_deposition_rate": 0.35,
+  "erosion_rate": 0.45,
+  "erosion_evaporation": 0.975,
+  "erosion_gravity": 10.5,
+  "erosion_max_lifetime": 65,
+  "erosion_step_size": 0.32,
+  "erosion_blur_iterations": 1,
+  "base_albedo_rgb": [204, 199, 178]
+}
