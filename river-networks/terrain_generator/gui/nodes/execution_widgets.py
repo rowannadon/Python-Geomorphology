@@ -12,13 +12,16 @@ class NodeProgressBar(QtWidgets.QGraphicsRectItem):
         super().__init__(node_view)
         self.node_view = node_view
         self.progress = 0.0  # 0.0 to 1.0
-        
+        self.message = ""
+
         # Styling
-        self.bar_height = 8
+        self.bar_height = 24
         self.bar_width = 160
         self.background_color = QtGui.QColor(60, 60, 60, 200)
         self.progress_color = QtGui.QColor(255, 200, 0, 255)  # Yellow
         self.border_color = QtGui.QColor(100, 100, 100, 255)
+        self.text_color = QtGui.QColor(220, 220, 220)
+        self.font = QtGui.QFont("Arial", 7)
         
         # Position above node (in LOCAL coordinates relative to parent)
         self.setZValue(1000)  # High z-value to appear on top
@@ -39,11 +42,18 @@ class NodeProgressBar(QtWidgets.QGraphicsRectItem):
             y = node_rect.top() - self.bar_height - 8
             self.setPos(x, y)
     
-    def set_progress(self, progress):
+    def set_progress(self, progress, message=""):
         """Set progress (0.0 to 1.0)."""
         self.progress = max(0.0, min(1.0, progress))
+        if message:
+            self.message = str(message)
         self.is_indeterminate = False
         self.animation_timer.stop()
+        self.update()
+
+    def set_message(self, message):
+        """Update the progress status text."""
+        self.message = str(message or "")
         self.update()
     
     def set_indeterminate(self, enabled=True):
@@ -71,20 +81,28 @@ class NodeProgressBar(QtWidgets.QGraphicsRectItem):
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
         rect = self.boundingRect()
-        
+
         # Draw background
         painter.setPen(QtGui.QPen(self.border_color, 1))
         painter.setBrush(self.background_color)
         painter.drawRoundedRect(rect, 4, 4)
-        
+
+        if self.message:
+            painter.setFont(self.font)
+            painter.setPen(self.text_color)
+            text_rect = QtCore.QRectF(rect.x() + 4, rect.y() + 1, rect.width() - 8, 10)
+            painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, self.message[:28])
+
         # Draw progress
+        progress_top = rect.y() + 12
+        progress_height = rect.height() - 14
         if self.is_indeterminate:
             # Animated stripe pattern
             progress_rect = QtCore.QRectF(
                 rect.x() + 2,
-                rect.y() + 2,
+                progress_top,
                 rect.width() - 4,
-                rect.height() - 4
+                progress_height
             )
             
             # Create a moving window
@@ -117,9 +135,9 @@ class NodeProgressBar(QtWidgets.QGraphicsRectItem):
             if progress_width > 0:
                 progress_rect = QtCore.QRectF(
                     rect.x() + 2,
-                    rect.y() + 2,
+                    progress_top,
                     progress_width,
-                    rect.height() - 4
+                    progress_height
                 )
                 painter.setPen(QtCore.Qt.NoPen)
                 painter.setBrush(self.progress_color)

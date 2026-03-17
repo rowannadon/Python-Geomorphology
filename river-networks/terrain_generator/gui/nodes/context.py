@@ -1,43 +1,80 @@
-"""Global context for node graph execution."""
+"""Shared execution context for the node graph."""
 
-from typing import Dict, Any, Optional
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, Tuple
 
 
 class NodeGraphContext:
-    """Global context shared across all nodes in the graph."""
-    
+    """Shared state and caches used across all nodes in the graph."""
+
     def __init__(self):
-        self._properties = {
-            'dim': 1024,  # Default resolution
+        self._project_settings_node = None
+        self._world_settings_node = None
+        self._properties: Dict[str, Any] = {
+            "dimension": 1024,
+            "seed": 42,
         }
-        self._map_properties_node = None
-    
-    def set_map_properties_node(self, node):
-        """Set the reference to the map properties node."""
-        self._map_properties_node = node
-    
+        self.heuristic_cache: Dict[Tuple[str, str], Any] = {}
+        self.graph_metadata: Dict[str, Any] = {}
+
+    def clear_runtime_caches(self):
+        """Clear caches for graph execution."""
+        self.heuristic_cache.clear()
+
+    def set_project_settings_node(self, node):
+        self._project_settings_node = node
+
+    def set_world_settings_node(self, node):
+        self._world_settings_node = node
+
+    def get_project_settings(self) -> Dict[str, Any]:
+        if self._project_settings_node is not None:
+            return self._project_settings_node.collect_settings()
+        return dict(self._properties)
+
+    def get_world_settings(self) -> Dict[str, Any]:
+        if self._world_settings_node is not None:
+            return self._world_settings_node.collect_settings()
+        return {
+            "cellsize": 1500.0,
+            "z_min": 0.0,
+            "z_max": 6000.0,
+            "sea_level_m": 0.0,
+            "temperature_pattern": "polar",
+            "precip_lat_pattern": "two_bands",
+            "prevailing_wind_model": "three_cell",
+            "tpi_radii": (25.0, 100.0),
+        }
+
     def get_resolution(self) -> int:
-        """Get the current resolution from the map properties node."""
-        if self._map_properties_node is not None:
-            dim_str = self._map_properties_node.get_property('dimension')
-            return int(dim_str)
-        return self._properties['dim']
-    
+        settings = self.get_project_settings()
+        try:
+            return int(settings.get("dimension", 1024))
+        except (TypeError, ValueError):
+            return 1024
+
+    def get_seed(self) -> int:
+        settings = self.get_project_settings()
+        try:
+            return int(settings.get("seed", 42))
+        except (TypeError, ValueError):
+            return 42
+
     def get_property(self, name: str, default: Any = None) -> Any:
-        """Get a global property value."""
-        if name == 'dim':
+        if name == "dimension":
             return self.get_resolution()
+        if name == "seed":
+            return self.get_seed()
         return self._properties.get(name, default)
-    
+
     def set_property(self, name: str, value: Any):
-        """Set a global property value."""
         self._properties[name] = value
 
 
-# Global context instance
 _global_context = NodeGraphContext()
 
 
 def get_global_context() -> NodeGraphContext:
-    """Get the global node graph context."""
+    """Return the global node editor context."""
     return _global_context

@@ -240,13 +240,15 @@ class TerrainGeneratorWindow(QMainWindow):
         self.tab_widget = QTabWidget()
         main_layout.addWidget(self.tab_widget)
         
-        # Create the traditional terrain view tab
-        self.terrain_tab = self.create_terrain_tab()
-        self.tab_widget.addTab(self.terrain_tab, "Terrain View")
-        
         # Create the node editor tab
         self.node_editor_tab = NodeEditorWidget()
         self.tab_widget.addTab(self.node_editor_tab, "Node Editor")
+
+        # Create the traditional terrain view tab
+        self.terrain_tab = self.create_terrain_tab()
+        self.tab_widget.addTab(self.terrain_tab, "Legacy Terrain View")
+
+        self.tab_widget.setCurrentWidget(self.node_editor_tab)
         
         # Apply theme if available
         if DARK_THEME_AVAILABLE:
@@ -342,13 +344,6 @@ class TerrainGeneratorWindow(QMainWindow):
         self.node_editor_tab.set_main_window(self)
         self.node_editor_tab.node_visualized.connect(self.on_node_visualized)
 
-    def on_node_executed(self, node):
-        """Handle node execution."""
-        # Switch to terrain view tab to see results if it's a visualization node
-        from .nodes import VisualizationNode
-        if isinstance(node, VisualizationNode):
-            self.tab_widget.setCurrentIndex(0)  # Switch to Terrain View tab
-    
     def on_node_visualized(self, node_name):
         """Handle node visualization."""
         # Update status

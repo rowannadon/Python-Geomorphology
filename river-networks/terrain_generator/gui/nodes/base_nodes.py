@@ -1,812 +1,815 @@
-"""Base node classes for terrain generation."""
+"""Typed base nodes for the terrain graph editor."""
+
+from __future__ import annotations
+
+import math
+import traceback
+from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import numpy as np
-import traceback
-from typing import Optional, Dict, Any
 from NodeGraphQt import BaseNode
-from PyQt5.QtCore import pyqtSignal, QObject
+from PyQt5.QtCore import QObject, pyqtSignal
 
+from ...core import ConsistentFBMNoise, gaussian_blur
+from ...io import HeightmapImporter
 from .context import get_global_context
+from .contracts import (
+    HeightfieldData,
+    MaskData,
+    PORT_TYPE_HEIGHTFIELD,
+    PORT_TYPE_MASK,
+    PORT_TYPE_SETTINGS,
+    SettingsData,
+    port_type_for_payload,
+)
 from .custom_node_view import CustomNodeItem
 
 
+def _parse_float(value: Any, default: float = 0.0) -> float:
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"inf", "+inf", "infinity", "+infinity"}:
+            return float("inf")
+        if lowered in {"-inf", "-infinity"}:
+            return float("-inf")
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _parse_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _parse_points_text(raw_text: str, fallback: Sequence[Tuple[float, float]]) -> list[Tuple[float, float]]:
+    text = (raw_text or "").strip()
+    if not text:
+        return list(fallback)
+    result: list[Tuple[float, float]] = []
+    for chunk in text.split(","):
+        item = chunk.strip()
+        if not item:
+            continue
+        if ":" not in item:
+            continue
+        left, right = item.split(":", 1)
+        try:
+            result.append((float(left), float(right)))
+        except ValueError:
+            continue
+    return result or list(fallback)
+
+
 class NodeSignals(QObject):
-    """Signals for node execution."""
-    execution_finished = pyqtSignal(object)  # Emits the node that finished
-    progress_updated = pyqtSignal(object, float)  # Emits (node, progress 0-1)
+    """Signals emitted by nodes as they execute."""
+
+    execution_finished = pyqtSignal(object)
+    progress_updated = pyqtSignal(object, float, str)
+    state_changed = pyqtSignal(object, str)
+    error_emitted = pyqtSignal(object, str)
 
 
 class TerrainBaseNode(BaseNode):
-    """Base class for all terrain generation nodes."""
-    
-    # Node identifier
-    __identifier__ = 'terrain'
-    
+    """Base class for all typed terrain nodes."""
+
+    __identifier__ = "terrain"
+    INPUT_TYPES: Dict[str, Tuple[str, ...]] = {}
+    OUTPUT_TYPES: Dict[str, Tuple[str, ...]] = {}
+
     def __init__(self):
-        # Use custom node item with dynamic border support
         super().__init__(qgraphics_item=CustomNodeItem)
         self.signals = NodeSignals()
+        self.context = get_global_context()
         self._cached_output = None
         self._is_dirty = True
-        self.context = get_global_context()
-        
-        # Store the clean base name
-        self._base_name = self.NODE_NAME if hasattr(self, 'NODE_NAME') else 'Node'
-        
-        # Style the node
+        self._last_error = None
+        self._base_name = getattr(self, "NODE_NAME", self.__class__.__name__)
+        self._serializable_properties: list[str] = []
+        self.set_name(self._base_name)
         self.set_color(80, 80, 120)
-    
-    def emit_progress(self, progress):
-        """Emit progress update (0.0 to 1.0)."""
-        self.signals.progress_updated.emit(self, progress)
-    
-    def set_property(self, name: str, value: Any, **kwargs):
-        """Override to mark node as dirty when properties change."""
-        # Get old value
+
+    def create_property(self, name: str, value: Any = None, *args, **kwargs):  # type: ignore[override]
+        if name not in self._serializable_properties and not name.startswith("_"):
+            self._serializable_properties.append(name)
+        return super().create_property(name, value, *args, **kwargs)
+
+    def set_property(self, name: str, value: Any, **kwargs):  # type: ignore[override]
         try:
             old_value = self.get_property(name)
-        except:
+        except Exception:
             old_value = None
-        
-        # Set the new value using parent's implementation with all kwargs
-        super().set_property(name, value, **kwargs)
-        
-        # Mark dirty if value actually changed
-        # IMPORTANT: Ignore UI/internal properties that don't affect computation
-        ui_properties = {'name', 'selected', 'pos', 'disabled', 'visible', 'color'}
-        if old_value != value and not name.startswith('_') and name not in ui_properties:
+        result = super().set_property(name, value, **kwargs)
+        if old_value != value and not name.startswith("_") and name not in {"name", "selected", "pos", "color", "disabled", "visible"}:
             self.mark_dirty()
-    
+        return result
+
+    def serializable_properties(self) -> Dict[str, Any]:
+        return {name: self.get_property(name) for name in self._serializable_properties}
+
+    def emit_progress(self, progress: float, message: str):
+        self.signals.progress_updated.emit(self, max(0.0, min(1.0, float(progress))), str(message))
+
+    def set_execution_state(self, state: str):
+        self.signals.state_changed.emit(self, state)
+
+    def emit_error(self, message: str):
+        self._last_error = str(message)
+        self.signals.error_emitted.emit(self, self._last_error)
+
     def mark_dirty(self):
-        """Mark this node and downstream nodes as needing recomputation."""
-        self._is_dirty = True
         self._cached_output = None
-        
-        # Mark all downstream nodes as dirty
-        for output_port in self.output_ports():
-            for connected_port in output_port.connected_ports():
-                connected_node = connected_port.node()
-                if isinstance(connected_node, TerrainBaseNode):
-                    connected_node.mark_dirty()
-    
-    def execute(self) -> Optional[Any]:
-        """
-        Execute this node's computation.
-        Override this in subclasses.
-        Returns the output data.
-        """
-        raise NotImplementedError("Subclasses must implement execute()")
-    
-    def get_output_data(self) -> Optional[Any]:
-        """Get the cached output data."""
+        self._is_dirty = True
+        self.set_execution_state("dirty")
+        try:
+            for output_port in self.output_ports():
+                for connected_port in output_port.connected_ports():
+                    node = connected_port.node()
+                    if isinstance(node, TerrainBaseNode) and not node._is_dirty:
+                        node.mark_dirty()
+        except Exception:
+            pass
+
+    def get_output_data(self):
         return self._cached_output
-    
+
     def set_output_data(self, data: Any):
-        """Set the cached output data."""
         self._cached_output = data
         self._is_dirty = False
+        self._last_error = None
+
+    def expected_input_types(self, port_name: str) -> Tuple[str, ...]:
+        return tuple(self.INPUT_TYPES.get(port_name, ()))
+
+    def output_types(self, port_name: str) -> Tuple[str, ...]:
+        return tuple(self.OUTPUT_TYPES.get(port_name, ()))
+
+    @staticmethod
+    def _port_name(port) -> str:
+        name_attr = getattr(port, "name", None)
+        if callable(name_attr):
+            return str(name_attr())
+        if name_attr is not None:
+            return str(name_attr)
+        model = getattr(port, "model", None)
+        if model is not None and hasattr(model, "name"):
+            return str(model.name)
+        return ""
+
+    def _connected_source(self, port_name: str):
+        port = self.inputs().get(port_name)
+        if port is None:
+            raise ValueError(f"Port '{port_name}' not found on node '{self.name()}'.")
+        connected = port.connected_ports()
+        if not connected:
+            return None
+        source_port = connected[0]
+        return source_port.node(), self._port_name(source_port)
+
+    def get_input_data(self, port_name: str, *, required: bool = True, expected_types: Optional[Tuple[str, ...]] = None):
+        connection = self._connected_source(port_name)
+        if connection is None:
+            if required:
+                raise ValueError(f"Input '{port_name}' is not connected.")
+            return None
+        node, source_port_name = connection
+        if isinstance(node, TerrainBaseNode):
+            data = node.get_output_data()
+        else:
+            data = getattr(node, "get_output_data", lambda: None)()
+        if isinstance(data, dict):
+            data = data.get(source_port_name)
+        if data is None:
+            if required:
+                raise ValueError(f"Input '{port_name}' does not have data available.")
+            return None
+        allowed_types = expected_types or self.expected_input_types(port_name)
+        if allowed_types:
+            actual_type = port_type_for_payload(data)
+            if actual_type not in allowed_types:
+                raise TypeError(
+                    f"Port '{port_name}' expected {allowed_types}, received '{actual_type}'."
+                )
+        return data
+
+    def get_input_heightfield(self, port_name: str = "heightfield", *, required: bool = True) -> Optional[HeightfieldData]:
+        data = self.get_input_data(port_name, required=required, expected_types=(PORT_TYPE_HEIGHTFIELD,))
+        return data
+
+    def get_input_mask(self, port_name: str = "mask", *, required: bool = True) -> Optional[MaskData]:
+        data = self.get_input_data(port_name, required=required, expected_types=(PORT_TYPE_MASK,))
+        return data
+
+    def get_visualization_payload(self):
+        data = self.get_output_data()
+        if isinstance(data, dict):
+            for key in ("terrain_bundle", "map_overlay", "heightfield", "land_mask"):
+                if key in data:
+                    return data[key]
+            return next(iter(data.values()), None)
+        return data
+
+    def _graph_object(self):
+        """Return the owning graph for NodeGraphQt API variants."""
+        graph_attr = getattr(self, "graph", None)
+        if callable(graph_attr):
+            try:
+                return graph_attr()
+            except TypeError:
+                return None
+        return graph_attr
+
+    def execute(self):
+        raise NotImplementedError
 
 
-class MapPropertiesNode(TerrainBaseNode):
-    """Node that defines global map properties (resolution, etc)."""
-    
-    # Node metadata
-    NODE_NAME = 'Map Properties'
-    
+class ProjectSettingsNode(TerrainBaseNode):
+    """Global project settings for the node graph."""
+
+    NODE_NAME = "Project Settings"
+    OUTPUT_TYPES = {"settings": (PORT_TYPE_SETTINGS,)}
+
     def __init__(self):
         super().__init__()
-        self.set_name(self.NODE_NAME)
-        self.set_color(60, 100, 60)
-        
-        # This node has no ports - it's purely for global settings
-        
-        # Add property for dimension
-        self.add_combo_menu('dimension', 'Dimension', items=[
-            '512', '1024', '2048', '4096'
-        ])
-        self.set_property('dimension', '1024')
-        
-        # Add a hidden property to mark this as a global node
-        self.create_property('_is_global', True)
-        
-        # Register this node with the global context
-        self.context.set_map_properties_node(self)
-    
+        self.set_color(70, 110, 70)
+        self.add_output("settings", color=(120, 180, 120))
+        self.add_combo_menu("dimension", "Dimension", items=["512", "1024", "2048", "4096"])
+        self.set_property("dimension", "1024")
+        self.add_text_input("seed", "Seed", text="42")
+        self.add_combo_menu("preview_mode", "Preview Mode", items=["Off", "On"])
+        self.set_property("preview_mode", "Off")
+        self.context.set_project_settings_node(self)
+
+    def collect_settings(self) -> Dict[str, Any]:
+        return {
+            "dimension": _parse_int(self.get_property("dimension"), 1024),
+            "seed": _parse_int(self.get_property("seed"), 42),
+            "preview_mode": (self.get_property("preview_mode") == "On"),
+        }
+
     def mark_dirty(self):
-        """When map properties change, mark ALL nodes as dirty."""
         super().mark_dirty()
-        
-        # Get all nodes in the graph and mark them dirty
-        try:
-            graph = self.graph()
-            if graph is not None:
-                for node in graph.all_nodes():
-                    if isinstance(node, TerrainBaseNode) and node != self:
-                        node.mark_dirty()
-        except Exception as e:
-            # Node not yet added to graph, or graph not available
-            pass
-    
-    def execute(self) -> Dict[str, int]:
-        """Execute: update global context."""
-        try:
-            print(f"{self.name()}: Updating global context")
-            dim_str = self.get_property('dimension')
-            dim = int(dim_str)
-            print(f"{self.name()}: Set global dimension to {dim}")
-            
-            # The context automatically queries this node, so we just mark as clean
-            self._is_dirty = False
-            self.signals.execution_finished.emit(self)
-            return {'dim': dim}
-        except Exception as e:
-            print(f"{self.name()}: ERROR - {e}")
-            traceback.print_exc()
-            raise
+        graph = self._graph_object()
+        if graph is None:
+            return
+        for node in graph.all_nodes():
+            if isinstance(node, TerrainBaseNode) and node is not self and not node._is_dirty:
+                node.mark_dirty()
+
+    def execute(self):
+        settings = SettingsData(values=self.collect_settings(), scope="project")
+        self.set_output_data(settings)
+        self.signals.execution_finished.emit(self)
+        return settings
 
 
-class FBMNode(TerrainBaseNode):
-    """Node that generates FBM (Fractal Brownian Motion) noise."""
-    
-    # Node metadata
-    NODE_NAME = 'FBM Noise'
-    
+class WorldSettingsNode(TerrainBaseNode):
+    """Global world and heuristic defaults."""
+
+    NODE_NAME = "World Settings"
+    OUTPUT_TYPES = {"settings": (PORT_TYPE_SETTINGS,)}
+
     def __init__(self):
         super().__init__()
-        self.set_name(self.NODE_NAME)
-        self.set_color(80, 120, 150)
-        
-        # No resolution input needed - uses global context
-        
-        # Add output port for heightfield
-        self.add_output('heightfield', color=(150, 200, 150))
-        
-        # Add FBM parameters
-        self.add_text_input('scale', 'Scale', text='-6.0')
-        self.add_text_input('octaves', 'Octaves', text='6')
-        self.add_text_input('persistence', 'Persistence', text='0.5')
-        self.add_text_input('lacunarity', 'Lacunarity', text='2.0')
-        self.add_text_input('lower', 'Lower Bound', text='2.0')
-        self.add_text_input('upper', 'Upper Bound', text='inf')
-        self.add_text_input('seed', 'Seed', text='42')
-    
-    def execute(self) -> Optional[np.ndarray]:
-        """Execute: generate FBM noise."""
-        try:
-            print(f"{self.name()}: Starting execution")
-            
-            # Get dimension from global context
-            dim = self.context.get_resolution()
-            print(f"{self.name()}: Using global dimension: {dim}")
-            
-            # Parse FBM parameters
-            scale = float(self.get_property('scale'))
-            octaves = int(self.get_property('octaves'))
-            persistence = float(self.get_property('persistence'))
-            lacunarity = float(self.get_property('lacunarity'))
-            
-            lower_str = self.get_property('lower')
-            lower = float('inf') if lower_str.lower() == 'inf' else float(lower_str)
-            
-            upper_str = self.get_property('upper')
-            upper = float('inf') if upper_str.lower() == 'inf' else float(upper_str)
-            
-            seed = int(self.get_property('seed'))
-            
-            print(f"{self.name()}: Parameters - scale={scale}, octaves={octaves}, "
-                  f"persistence={persistence}, lacunarity={lacunarity}, "
-                  f"lower={lower}, upper={upper}, seed={seed}")
-            
-            # Import the FBM noise generator
-            from terrain_generator.core import ConsistentFBMNoise
-            
-            # Create FBM noise generator
-            fbm = ConsistentFBMNoise(
-                scale=scale,
-                octaves=octaves,
-                persistence=persistence,
-                lacunarity=lacunarity,
-                lower=lower,
-                upper=upper,
-                seed_offset=0,
-                base_seed=seed
-            )
-            
-            # Generate noise
-            print(f"{self.name()}: Generating FBM noise...")
-            heightfield = fbm.generate((dim, dim))
-            
-            print(f"{self.name()}: Generated {dim}x{dim} heightfield, "
-                  f"range=[{heightfield.min():.3f}, {heightfield.max():.3f}]")
-            
-            self.set_output_data(heightfield)
-            self.signals.execution_finished.emit(self)
-            return heightfield
-            
-        except Exception as e:
-            print(f"{self.name()}: ERROR - {e}")
-            traceback.print_exc()
-            raise
+        self.set_color(70, 90, 130)
+        self.add_output("settings", color=(120, 160, 220))
+        self.add_text_input("cellsize", "Cell Size (m)", text="1500")
+        self.add_text_input("z_min", "Elevation Min", text="0")
+        self.add_text_input("z_max", "Elevation Max", text="6000")
+        self.add_text_input("sea_level_m", "Sea Level (m)", text="0")
+        self.add_text_input("tpi_radii_text", "TPI Radii", text="25, 100")
+        self.add_combo_menu("temperature_pattern", "Temperature", items=["polar", "equatorial", "gradient"])
+        self.set_property("temperature_pattern", "polar")
+        self.add_combo_menu("precip_lat_pattern", "Precipitation", items=["two_bands", "single_band", "uniform", "gradient"])
+        self.set_property("precip_lat_pattern", "two_bands")
+        self.add_combo_menu("prevailing_wind_model", "Wind", items=["three_cell", "constant"])
+        self.set_property("prevailing_wind_model", "three_cell")
+        self.add_combo_menu("use_random_biomes", "Random Biomes", items=["False", "True"])
+        self.set_property("use_random_biomes", "False")
+        self.add_combo_menu("use_simulated_flow", "Use Sim Flow", items=["True", "False"])
+        self.set_property("use_simulated_flow", "True")
+        self.context.set_world_settings_node(self)
+
+    def collect_settings(self) -> Dict[str, Any]:
+        return {
+            "cellsize": _parse_float(self.get_property("cellsize"), 1500.0),
+            "z_min": _parse_float(self.get_property("z_min"), 0.0),
+            "z_max": _parse_float(self.get_property("z_max"), 6000.0),
+            "sea_level_m": _parse_float(self.get_property("sea_level_m"), 0.0),
+            "tpi_radii": tuple(
+                float(chunk.strip())
+                for chunk in str(self.get_property("tpi_radii_text") or "25,100").split(",")
+                if chunk.strip()
+            ) or (25.0, 100.0),
+            "temperature_pattern": self.get_property("temperature_pattern") or "polar",
+            "precip_lat_pattern": self.get_property("precip_lat_pattern") or "two_bands",
+            "prevailing_wind_model": self.get_property("prevailing_wind_model") or "three_cell",
+            "use_random_biomes": (self.get_property("use_random_biomes") == "True"),
+            "use_simulated_flow": (self.get_property("use_simulated_flow") == "True"),
+        }
+
+    def mark_dirty(self):
+        super().mark_dirty()
+        graph = self._graph_object()
+        if graph is None:
+            return
+        for node in graph.all_nodes():
+            if isinstance(node, TerrainBaseNode) and node is not self and not node._is_dirty:
+                node.mark_dirty()
+
+    def execute(self):
+        settings = SettingsData(values=self.collect_settings(), scope="world")
+        self.set_output_data(settings)
+        self.signals.execution_finished.emit(self)
+        return settings
 
 
 class ConstantNode(TerrainBaseNode):
-    """Node that creates a constant heightfield."""
+    """Emit a constant-valued heightfield."""
 
-    # Node metadata
-    NODE_NAME = 'Constant'
-    
+    NODE_NAME = "Constant"
+    OUTPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+
     def __init__(self):
         super().__init__()
-        self.set_name(self.NODE_NAME)
         self.set_color(100, 80, 120)
-        
-        # No resolution input needed - uses global context
-        
-        # Add output port for heightfield
-        self.add_output('heightfield', color=(150, 200, 150))
-        
-        # Add property for constant value
-        self.add_text_input('value', 'Value', text='0.5')
-    
-    def execute(self) -> Optional[np.ndarray]:
-        """Execute: create constant heightfield."""
-        try:
-            print(f"{self.name()}: Starting execution")
-            
-            # Get dimension from global context
-            dim = self.context.get_resolution()
-            print(f"{self.name()}: Using global dimension: {dim}")
-            
-            # Get constant value
-            value_str = self.get_property('value')
-            try:
-                value = float(value_str)
-            except ValueError:
-                print(f"{self.name()}: Invalid value '{value_str}', using 0.5")
-                value = 0.5
-            
-            # Create constant heightfield
-            print(f"{self.name()}: Creating heightfield...")
-            heightfield = np.full((dim, dim), value, dtype=np.float32)
-            
-            print(f"{self.name()}: Created {dim}x{dim} heightfield with value {value}")
-            
-            self.set_output_data(heightfield)
-            self.signals.execution_finished.emit(self)
-            return heightfield
-            
-        except Exception as e:
-            print(f"{self.name()}: ERROR - {e}")
-            traceback.print_exc()
-            raise
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_text_input("value", "Value", text="0.5")
+
+    def execute(self):
+        dim = self.context.get_resolution()
+        value = _parse_float(self.get_property("value"), 0.5)
+        arr = np.full((dim, dim), value, dtype=np.float32)
+        payload = HeightfieldData(array=arr, name=self._base_name, metadata={"node": self._base_name})
+        self.set_output_data(payload)
+        self.signals.execution_finished.emit(self)
+        return payload
+
+
+class FBMNode(TerrainBaseNode):
+    """Generate FBM noise."""
+
+    NODE_NAME = "FBM Noise"
+    OUTPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(80, 120, 150)
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_text_input("scale", "Scale", text="-6.0")
+        self.add_text_input("octaves", "Octaves", text="6")
+        self.add_text_input("persistence", "Persistence", text="0.5")
+        self.add_text_input("lacunarity", "Lacunarity", text="2.0")
+        self.add_text_input("lower", "Lower Bound", text="2.0")
+        self.add_text_input("upper", "Upper Bound", text="inf")
+        self.add_text_input("seed", "Seed", text="42")
+
+    def execute(self):
+        dim = self.context.get_resolution()
+        generator = ConsistentFBMNoise(
+            scale=_parse_float(self.get_property("scale"), -6.0),
+            octaves=_parse_int(self.get_property("octaves"), 6),
+            persistence=_parse_float(self.get_property("persistence"), 0.5),
+            lacunarity=_parse_float(self.get_property("lacunarity"), 2.0),
+            lower=_parse_float(self.get_property("lower"), 2.0),
+            upper=_parse_float(self.get_property("upper"), float("inf")),
+            seed_offset=0,
+            base_seed=_parse_int(self.get_property("seed"), self.context.get_seed()),
+        )
+        self.emit_progress(0.1, "Generating FBM noise")
+        arr = generator.generate((dim, dim))
+        payload = HeightfieldData(array=arr, name=self._base_name, metadata={"node": self._base_name})
+        self.emit_progress(1.0, "FBM noise ready")
+        self.set_output_data(payload)
+        self.signals.execution_finished.emit(self)
+        return payload
+
+
+class ImportHeightmapNode(TerrainBaseNode):
+    """Load a heightmap from disk."""
+
+    NODE_NAME = "Import Heightmap"
+    OUTPUT_TYPES = {
+        "heightfield": (PORT_TYPE_HEIGHTFIELD,),
+        "land_mask": (PORT_TYPE_MASK,),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(110, 130, 80)
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_output("land_mask", color=(120, 180, 120))
+        self.add_text_input("file_path", "File Path", text="")
+
+    def execute(self):
+        file_path = str(self.get_property("file_path") or "").strip()
+        if not file_path:
+            raise ValueError("Import Heightmap node requires a file path.")
+        dim = self.context.get_resolution()
+        self.emit_progress(0.1, "Loading heightmap")
+        heightfield, land_mask = HeightmapImporter.load_heightmap(file_path, (dim, dim))
+        payload = HeightfieldData(array=heightfield, name=self._base_name, metadata={"source_path": file_path})
+        mask_payload = MaskData(array=land_mask, name=f"{self._base_name} Mask")
+        self.emit_progress(1.0, "Heightmap loaded")
+        self.set_output_data({"heightfield": payload, "land_mask": mask_payload})
+        self.signals.execution_finished.emit(self)
+        return self._cached_output
+
+    def get_output_data(self):
+        return self._cached_output
 
 
 class ShapeNode(TerrainBaseNode):
-    """Node that generates geometric shapes for use as masks."""
-    
-    # Node metadata
-    NODE_NAME = 'Shape'
-    
+    """Generate a geometric mask shape."""
+
+    NODE_NAME = "Shape Mask"
+    OUTPUT_TYPES = {
+        "heightfield": (PORT_TYPE_HEIGHTFIELD,),
+        "mask": (PORT_TYPE_MASK,),
+    }
+
     def __init__(self):
         super().__init__()
-        self.set_name(self.NODE_NAME)
-        self.set_color(180, 120, 90)  # Orange/tan color for mask nodes
-        
-        # Add output port for heightfield/mask
-        self.add_output('heightfield', color=(150, 200, 150))
-        
-        # Shape type selector
-        self.add_combo_menu('shape_type', 'Shape', items=[
-            'Circle', 'Square', 'Triangle', 'Rounded Square'
-        ])
-        self.set_property('shape_type', 'Circle')
-        
-        # Position and scale parameters
-        self.add_text_input('scale', 'Scale', text='1.0')
-        self.add_text_input('offset_x', 'Offset X', text='0.0')
-        self.add_text_input('offset_y', 'Offset Y', text='0.0')
-        self.add_text_input('falloff', 'Falloff', text='0.1')
-    
-    def execute(self) -> Optional[np.ndarray]:
-        """Execute: generate shape mask."""
-        try:
-            print(f"{self.name()}: Starting execution")
-            
-            # Get dimension from global context
-            dim = self.context.get_resolution()
-            print(f"{self.name()}: Using global dimension: {dim}")
-            
-            # Parse parameters
-            shape_type = (self.get_property('shape_type') or 'Circle').strip().lower()
-            scale = float(self.get_property('scale'))
-            offset_x = float(self.get_property('offset_x'))
-            offset_y = float(self.get_property('offset_y'))
-            falloff = max(float(self.get_property('falloff')), 0.001)  # Avoid divide by zero
-            
-            print(f"{self.name()}: Parameters - shape={shape_type}, scale={scale}, "
-                  f"offset=({offset_x}, {offset_y}), falloff={falloff}")
-            
-            # Generate shape
-            print(f"{self.name()}: Generating shape...")
-            heightfield = self._generate_shape(
-                dim, shape_type, scale, offset_x, offset_y, falloff
-            )
-            
-            print(f"{self.name()}: Generated {dim}x{dim} shape mask, "
-                  f"range=[{heightfield.min():.3f}, {heightfield.max():.3f}]")
-            
-            self.set_output_data(heightfield)
-            self.signals.execution_finished.emit(self)
-            return heightfield
-            
-        except Exception as e:
-            print(f"{self.name()}: ERROR - {e}")
-            traceback.print_exc()
-            raise
-    
-    def _generate_shape(self, dim: int, shape_type: str, scale: float, 
-                       offset_x: float, offset_y: float, falloff: float) -> np.ndarray:
-        """Generate the specified shape with falloff."""
-        # Create coordinate grid centered at (0, 0)
-        # Scale coordinates so that the map spans [-1, 1] in both dimensions
+        self.set_color(180, 120, 90)
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_output("mask", color=(120, 180, 120))
+        self.add_combo_menu("shape_type", "Shape", items=["Circle", "Square", "Triangle", "Rounded Square"])
+        self.set_property("shape_type", "Circle")
+        self.add_text_input("scale", "Scale", text="1.0")
+        self.add_text_input("offset_x", "Offset X", text="0.0")
+        self.add_text_input("offset_y", "Offset Y", text="0.0")
+        self.add_text_input("falloff", "Falloff", text="0.1")
+
+    def execute(self):
+        dim = self.context.get_resolution()
+        shape_type = str(self.get_property("shape_type") or "Circle").strip().lower()
+        scale = _parse_float(self.get_property("scale"), 1.0)
+        offset_x = _parse_float(self.get_property("offset_x"), 0.0)
+        offset_y = _parse_float(self.get_property("offset_y"), 0.0)
+        falloff = max(_parse_float(self.get_property("falloff"), 0.1), 0.001)
         y, x = np.meshgrid(
-            np.linspace(-1, 1, dim),
-            np.linspace(-1, 1, dim),
-            indexing='ij'
+            np.linspace(-1.0, 1.0, dim),
+            np.linspace(-1.0, 1.0, dim),
+            indexing="ij",
         )
-        
-        # Apply offset (normalized coordinates, so offset of 1.0 moves by map width)
         x = x - offset_x
         y = y - offset_y
-        
-        # Generate distance field based on shape type
-        if shape_type == 'circle':
-            # Euclidean distance from center
+        if shape_type == "circle":
             dist = np.sqrt(x**2 + y**2)
-            # Radius in normalized coordinates (scale=1.0 means radius=1.0, touching edges)
             radius = scale
-            
-        elif shape_type == 'square':
-            # Chebyshev distance (max of abs values)
+        elif shape_type == "square":
             dist = np.maximum(np.abs(x), np.abs(y))
             radius = scale
-            
-        elif shape_type == 'triangle':
-            # Equilateral triangle pointing up
-            # Define three edges and take intersection
-            # Edge 1: bottom edge at y = -scale
-            # Edge 2: right diagonal
-            # Edge 3: left diagonal
-            
-            # Height of equilateral triangle with side 2*scale
-            height = scale * np.sqrt(3)
-            
-            # Distance from bottom edge
+        elif shape_type == "triangle":
             d1 = y + scale
-            
-            # Distance from right edge (normal: (-sqrt(3)/2, -1/2), passes through (scale, -scale))
-            # Distance = (normal . (point - point_on_line)) / |normal|
-            d2 = (-np.sqrt(3) * (x - scale) - (y + scale)) / 2.0
-            
-            # Distance from left edge (normal: (sqrt(3)/2, -1/2), passes through (-scale, -scale))
-            d3 = (np.sqrt(3) * (x + scale) - (y + scale)) / 2.0
-            
-            # Inside triangle when all distances are positive
-            # Distance to triangle is negative of minimum distance when inside
+            d2 = (-np.sqrt(3.0) * (x - scale) - (y + scale)) / 2.0
+            d3 = (np.sqrt(3.0) * (x + scale) - (y + scale)) / 2.0
             dist = -np.minimum(np.minimum(d1, d2), d3)
-            radius = 0  # Triangle has exact edges
-            
-        elif shape_type == 'rounded square':
-            # Square with rounded corners (superellipse)
-            # Use smooth approximation: (|x|^p + |y|^p)^(1/p) with p=4
+            radius = 0.0
+        elif shape_type == "rounded square":
             p = 4.0
-            dist = (np.abs(x)**p + np.abs(y)**p)**(1.0/p)
+            dist = (np.abs(x) ** p + np.abs(y) ** p) ** (1.0 / p)
             radius = scale
-            
         else:
-            raise ValueError(f"Unknown shape type: {shape_type}")
-        
-        # Convert distance field to mask with falloff
-        # Inside shape (dist < radius): value = 1.0
-        # At boundary (dist = radius): value = 0.5
-        # Outside shape (dist > radius + falloff): value = 0.0
-        
-        # Smooth transition using smoothstep function
-        # smoothstep(x) = 3x^2 - 2x^3 for x in [0, 1]
-        edge_dist = (dist - radius) / falloff
-        
-        # Clamp to [0, 1] range
-        edge_dist = np.clip(edge_dist, 0.0, 1.0)
-        
-        # Apply smoothstep for smooth falloff
-        # We want 1.0 inside and 0.0 outside, so invert the distance
-        mask = 1.0 - (3.0 * edge_dist**2 - 2.0 * edge_dist**3)
-        
-        return mask.astype(np.float32)
+            raise ValueError(f"Unknown shape '{shape_type}'.")
+        edge_dist = np.clip((dist - radius) / falloff, 0.0, 1.0)
+        mask_arr = 1.0 - (3.0 * edge_dist**2 - 2.0 * edge_dist**3)
+        heightfield = HeightfieldData(array=mask_arr.astype(np.float32), name=self._base_name)
+        mask = MaskData(array=mask_arr >= 0.5, name=f"{self._base_name} Mask")
+        self.set_output_data({"heightfield": heightfield, "mask": mask})
+        self.signals.execution_finished.emit(self)
+        return self._cached_output
 
 
 class CombineNode(TerrainBaseNode):
-    """Node that combines two heightfields using blend operations."""
+    """Blend or combine two heightfields."""
 
-    NODE_NAME = 'Combine'
+    NODE_NAME = "Combine"
+    INPUT_TYPES = {
+        "heightfield_a": (PORT_TYPE_HEIGHTFIELD,),
+        "heightfield_b": (PORT_TYPE_HEIGHTFIELD,),
+        "mask": (PORT_TYPE_MASK, PORT_TYPE_HEIGHTFIELD),
+    }
+    OUTPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
 
     def __init__(self):
         super().__init__()
-        self.set_name(self.NODE_NAME)
         self.set_color(140, 90, 130)
+        self.add_input("heightfield_a", color=(150, 200, 150))
+        self.add_input("heightfield_b", color=(150, 200, 150))
+        self.add_input("mask", color=(200, 200, 200))
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_combo_menu("operation", "Operation", items=["Fade", "Add", "Subtract", "Multiply", "Divide", "Smooth Max", "Smooth Min", "Pow"])
+        self.set_property("operation", "Fade")
+        self.add_text_input("fade_amount", "Fade Amount", text="0.5")
+        self.add_text_input("smoothness", "Smoothness", text="5.0")
+        self.add_text_input("divide_epsilon", "Divide Epsilon", text="1e-5")
 
-        # Inputs: two mandatory heightfields and optional mask
-        self.add_input('heightfield_a', color=(150, 200, 150))
-        self.add_input('heightfield_b', color=(150, 200, 150))
-        self.add_input('mask', color=(200, 200, 200))
-
-        # Output heightfield
-        self.add_output('heightfield', color=(150, 200, 150))
-
-        # Operation selector and related parameters
-        self.add_combo_menu('operation', 'Operation', items=[
-            'Fade', 'Add', 'Subtract', 'Multiply', 'Divide',
-            'Smooth Max', 'Smooth Min', 'Pow'
-        ])
-        self.set_property('operation', 'Fade')
-
-        self.add_text_input('fade_amount', 'Fade Amount', text='0.5')
-        self.add_text_input('smoothness', 'Smoothness', text='5.0')
-        self.add_text_input('divide_epsilon', 'Divide Epsilon', text='1e-5')
-
-    def execute(self) -> Optional[np.ndarray]:
-        """Execute: combine two heightfields."""
-        try:
-            print(f"{self.name()}: Starting execution")
-
-            height_a = self._get_input_array('heightfield_a', required=True)
-            height_b = self._get_input_array('heightfield_b', required=True)
-            mask = self._get_input_array('mask', required=False)
-
-            if height_a.shape != height_b.shape:
-                raise ValueError("Input heightfields must have the same shape")
-
-            height_a = height_a.astype(np.float32, copy=False)
-            height_b = height_b.astype(np.float32, copy=False)
-
-            mask_array = self._prepare_mask(mask, height_a.shape)
-
-            operation = (self.get_property('operation') or 'Fade').strip().lower()
-            combined = self._apply_operation(operation, height_a, height_b)
-
-            # Blend result based on mask intensity
-            result = height_a + mask_array * (combined - height_a)
-
-            self.set_output_data(result)
-            self.signals.execution_finished.emit(self)
-            return result
-
-        except Exception as e:
-            print(f"{self.name()}: ERROR - {e}")
-            traceback.print_exc()
-            raise
-
-    def _get_input_array(self, port_name: str, required: bool) -> Optional[np.ndarray]:
-        """Fetch input data from a port, executing upstream nodes if needed."""
-        port = self.inputs().get(port_name)
-        if port is None:
-            raise ValueError(f"Port '{port_name}' not found")
-
-        connected_ports = port.connected_ports()
-        if not connected_ports:
-            if required:
-                raise ValueError(f"Input '{port_name}' is not connected")
-            return None
-
-        source_port = connected_ports[0]
-        source_node = source_port.node()
-
-        if isinstance(source_node, TerrainBaseNode):
-            if source_node._is_dirty:
-                source_node.execute()
-            data = source_node.get_output_data()
+    def execute(self):
+        a_data = self.get_input_data("heightfield_a", expected_types=(PORT_TYPE_HEIGHTFIELD,))
+        b_data = self.get_input_data("heightfield_b", expected_types=(PORT_TYPE_HEIGHTFIELD,))
+        mask_input = self.get_input_data("mask", required=False, expected_types=(PORT_TYPE_MASK, PORT_TYPE_HEIGHTFIELD))
+        a = a_data.array.astype(np.float32, copy=False)
+        b = b_data.array.astype(np.float32, copy=False)
+        if a.shape != b.shape:
+            raise ValueError("Combine node inputs must have matching shapes.")
+        if isinstance(mask_input, MaskData):
+            if mask_input.mask_kind == "boolean":
+                mask = np.asarray(mask_input.array, dtype=np.float32)
+            else:
+                mask = np.clip(np.asarray(mask_input.array, dtype=np.float32), 0.0, 1.0)
+        elif isinstance(mask_input, HeightfieldData):
+            mask = np.clip(mask_input.array.astype(np.float32), 0.0, 1.0)
         else:
-            raise ValueError(f"Connected node for '{port_name}' is not a terrain node")
+            mask = np.ones_like(a, dtype=np.float32)
+        operation = str(self.get_property("operation") or "Fade").strip().lower()
+        if operation == "fade":
+            fade = np.clip(_parse_float(self.get_property("fade_amount"), 0.5), 0.0, 1.0)
+            combined = (1.0 - fade) * a + fade * b
+        elif operation == "add":
+            combined = a + b
+        elif operation == "subtract":
+            combined = a - b
+        elif operation == "multiply":
+            combined = a * b
+        elif operation == "divide":
+            eps = max(abs(_parse_float(self.get_property("divide_epsilon"), 1e-5)), 1e-6)
+            safe = np.where(np.abs(b) < eps, np.sign(b + eps) * eps, b)
+            combined = a / safe
+        elif operation == "smooth max":
+            smooth = max(abs(_parse_float(self.get_property("smoothness"), 5.0)), 1e-6)
+            combined = np.logaddexp(smooth * a, smooth * b) / smooth
+        elif operation == "smooth min":
+            smooth = max(abs(_parse_float(self.get_property("smoothness"), 5.0)), 1e-6)
+            combined = -np.logaddexp(-smooth * a, -smooth * b) / smooth
+        elif operation == "pow":
+            combined = np.power(np.clip(a, 1e-6, None), b)
+        else:
+            raise ValueError(f"Unsupported combine operation '{operation}'.")
+        result = a + mask * (combined - a)
+        payload = a_data.with_array(result.astype(np.float32), name=self._base_name)
+        self.set_output_data(payload)
+        self.signals.execution_finished.emit(self)
+        return payload
 
-        if data is None:
-            raise ValueError(f"No data received from '{port_name}'")
 
-        if not isinstance(data, np.ndarray):
-            raise ValueError(f"Input '{port_name}' must be a numpy array")
+class DomainWarpNode(TerrainBaseNode):
+    """Apply domain warping to a heightfield."""
 
-        return data
+    NODE_NAME = "Domain Warp"
+    INPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+    OUTPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
 
-    def _prepare_mask(self, mask: Optional[np.ndarray], target_shape) -> np.ndarray:
-        """Prepare mask array ensuring correct shape and range."""
-        if mask is None:
-            return np.ones(target_shape, dtype=np.float32)
+    def __init__(self):
+        super().__init__()
+        self.set_color(150, 100, 80)
+        self.add_input("heightfield", color=(150, 200, 150))
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_text_input("offset_scale", "Offset Scale", text="-5.0")
+        self.add_text_input("offset_lower", "Offset Lower", text="1.5")
+        self.add_text_input("offset_upper", "Offset Upper", text="inf")
+        self.add_text_input("offset_amplitude", "Warp Strength", text="150.0")
+        self.add_text_input("seed", "Seed", text="42")
 
-        if mask.shape != target_shape:
-            raise ValueError("Mask shape must match heightfield shape")
+    @staticmethod
+    def _sample(array: np.ndarray, offset: np.ndarray) -> np.ndarray:
+        shape = np.array(array.shape)
+        delta = np.array((offset.real, offset.imag))
+        coords = np.array(np.meshgrid(*map(range, shape), indexing="ij")) - delta
+        lower = np.floor(coords).astype(int)
+        upper = lower + 1
+        blend = coords - lower
+        lower[0] %= shape[0]
+        lower[1] %= shape[1]
+        upper[0] %= shape[0]
+        upper[1] %= shape[1]
 
-        original_dtype = mask.dtype
-        mask_array = mask.astype(np.float32, copy=False)
+        def lerp(lhs, rhs, t):
+            return lhs * (1.0 - t) + rhs * t
 
-        if np.issubdtype(original_dtype, np.integer):
-            mask_array = mask_array / 255.0
+        return lerp(
+            lerp(array[lower[0], lower[1]], array[lower[0], upper[1]], blend[1]),
+            lerp(array[upper[0], lower[1]], array[upper[0], upper[1]], blend[1]),
+            blend[0],
+        )
 
-        mask_array = np.clip(mask_array, 0.0, 1.0)
-        return mask_array
+    def execute(self):
+        source = self.get_input_heightfield("heightfield")
+        dim = self.context.get_resolution()
+        seed = _parse_int(self.get_property("seed"), self.context.get_seed())
+        scale = _parse_float(self.get_property("offset_scale"), -5.0)
+        lower = _parse_float(self.get_property("offset_lower"), 1.5)
+        upper = _parse_float(self.get_property("offset_upper"), float("inf"))
+        amplitude = _parse_float(self.get_property("offset_amplitude"), 150.0)
+        fbm_x = ConsistentFBMNoise(
+            scale=scale,
+            octaves=6,
+            persistence=0.5,
+            lacunarity=2.0,
+            lower=lower,
+            upper=upper,
+            seed_offset=1000,
+            base_seed=seed,
+        )
+        fbm_y = ConsistentFBMNoise(
+            scale=scale,
+            octaves=6,
+            persistence=0.5,
+            lacunarity=2.0,
+            lower=lower,
+            upper=upper,
+            seed_offset=2000,
+            base_seed=seed,
+        )
+        offset_x = fbm_x.generate((dim, dim))
+        offset_y = fbm_y.generate((dim, dim))
+        warped = self._sample(source.array, amplitude * (offset_x + 1j * offset_y))
+        payload = source.with_array(warped.astype(np.float32), name=self._base_name)
+        self.set_output_data(payload)
+        self.signals.execution_finished.emit(self)
+        return payload
 
-    def _apply_operation(self, operation: str, height_a: np.ndarray, height_b: np.ndarray) -> np.ndarray:
-        """Apply combination operation between two heightfields."""
-        if operation == 'fade':
-            fade_amount = float(self.get_property('fade_amount'))
-            fade_amount = float(np.clip(fade_amount, 0.0, 1.0))
-            return (1.0 - fade_amount) * height_a + fade_amount * height_b
 
-        if operation == 'add':
-            return height_a + height_b
+class CurveRemapNode(TerrainBaseNode):
+    """Remap a heightfield through configurable control points."""
 
-        if operation == 'subtract':
-            return height_a - height_b
+    NODE_NAME = "Curve Remap"
+    INPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+    OUTPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
 
-        if operation == 'multiply':
-            return height_a * height_b
+    def __init__(self):
+        super().__init__()
+        self.set_color(160, 120, 70)
+        self.add_input("heightfield", color=(150, 200, 150))
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_text_input("control_points", "Control Points", text="0.0:0.0, 1.0:1.0")
 
-        if operation == 'divide':
-            epsilon = abs(float(self.get_property('divide_epsilon')))
-            epsilon = epsilon if epsilon > 0 else 1e-6
-            safe_sign = np.where(height_b >= 0.0, 1.0, -1.0)
-            safe_denominator = np.where(np.abs(height_b) < epsilon, safe_sign * epsilon, height_b)
-            return height_a / safe_denominator
+    def execute(self):
+        source = self.get_input_heightfield("heightfield")
+        points = sorted(_parse_points_text(str(self.get_property("control_points") or ""), [(0.0, 0.0), (1.0, 1.0)]))
+        x = np.array([item[0] for item in points], dtype=np.float32)
+        y = np.array([item[1] for item in points], dtype=np.float32)
+        input_arr = source.array.astype(np.float32)
+        normalized = input_arr
+        source_min = float(input_arr.min())
+        source_max = float(input_arr.max())
+        if source_max > source_min:
+            normalized = (input_arr - source_min) / (source_max - source_min)
+        remapped = np.interp(np.clip(normalized, 0.0, 1.0), x, y).astype(np.float32)
+        payload = source.with_array(remapped, name=self._base_name)
+        self.set_output_data(payload)
+        self.signals.execution_finished.emit(self)
+        return payload
 
-        if operation == 'smooth max':
-            smoothness = max(abs(float(self.get_property('smoothness'))), 1e-6)
-            return np.logaddexp(smoothness * height_a, smoothness * height_b) / smoothness
 
-        if operation == 'smooth min':
-            smoothness = max(abs(float(self.get_property('smoothness'))), 1e-6)
-            return -np.logaddexp(-smoothness * height_a, -smoothness * height_b) / smoothness
+class ThresholdFloodNode(TerrainBaseNode):
+    """Threshold a heightfield into land/water and flatten submerged areas."""
 
-        if operation == 'pow':
-            safe_base = np.clip(height_a, 1e-6, None)
-            return np.power(safe_base, height_b)
+    NODE_NAME = "Threshold/Flood"
+    INPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+    OUTPUT_TYPES = {
+        "heightfield": (PORT_TYPE_HEIGHTFIELD,),
+        "land_mask": (PORT_TYPE_MASK,),
+    }
 
-        raise ValueError(f"Unsupported operation '{operation}'")
+    def __init__(self):
+        super().__init__()
+        self.set_color(90, 140, 110)
+        self.add_input("heightfield", color=(150, 200, 150))
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_output("land_mask", color=(120, 180, 120))
+        self.add_text_input("sea_level", "Sea Level", text="0.3")
+
+    def execute(self):
+        source = self.get_input_heightfield("heightfield")
+        sea_level = _parse_float(self.get_property("sea_level"), 0.0)
+        flooded = np.where(source.array > sea_level, source.array - sea_level, 0.0).astype(np.float32)
+        land_mask = flooded > 0.001
+        payload = source.with_array(flooded, name=self._base_name)
+        mask = MaskData(array=land_mask, name=f"{self._base_name} Mask")
+        self.set_output_data({"heightfield": payload, "land_mask": mask})
+        self.signals.execution_finished.emit(self)
+        return self._cached_output
+
+
+class GaussianBlurNode(TerrainBaseNode):
+    """Blur a heightfield with a Gaussian kernel."""
+
+    NODE_NAME = "Gaussian Blur"
+    INPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+    OUTPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(120, 100, 90)
+        self.add_input("heightfield", color=(150, 200, 150))
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_text_input("sigma", "Sigma", text="2.5")
+
+    def execute(self):
+        source = self.get_input_heightfield("heightfield")
+        sigma = max(_parse_float(self.get_property("sigma"), 0.0), 0.0)
+        if sigma <= 0.0:
+            payload = source.with_array(source.array.copy(), name=self._base_name)
+        else:
+            payload = source.with_array(gaussian_blur(source.array, sigma=sigma).astype(np.float32), name=self._base_name)
+        self.set_output_data(payload)
+        self.signals.execution_finished.emit(self)
+        return payload
 
 
 class InvertNode(TerrainBaseNode):
-    """Node that inverts a heightfield (1.0 - value)."""
-    
-    # Node metadata
-    NODE_NAME = 'Invert'
-    
-    def __init__(self):
-        super().__init__()
-        self.set_name(self.NODE_NAME)
-        self.set_color(130, 100, 140)  # Purple tone
-        
-        # Add input port for heightfield
-        self.add_input('heightfield', color=(150, 200, 150))
-        
-        # Add output port for inverted heightfield
-        self.add_output('heightfield', color=(150, 200, 150))
-        
-        # Add inversion mode option
-        self.add_combo_menu('mode', 'Mode', items=[
-            'Normalized (1 - x)',
-            'Range Flip (max - x + min)'
-        ])
-        self.set_property('mode', 'Normalized (1 - x)')
-    
-    def execute(self) -> Optional[np.ndarray]:
-        """Execute: invert heightfield."""
-        try:
-            print(f"{self.name()}: Starting execution")
-            
-            # Get heightfield from connected node
-            heightfield_port = self.inputs().get('heightfield')
-            if heightfield_port is None:
-                raise ValueError("Heightfield port not found")
-            
-            connected_ports = heightfield_port.connected_ports()
-            if not connected_ports:
-                raise ValueError("No heightfield input connected")
-            
-            # Get the connected node and execute if needed
-            source_port = connected_ports[0]
-            source_node = source_port.node()
-            
-            if isinstance(source_node, TerrainBaseNode):
-                if source_node._is_dirty:
-                    source_node.execute()
-                heightfield = source_node.get_output_data()
-            else:
-                raise ValueError("Invalid heightfield source")
-            
-            if heightfield is None:
-                raise ValueError("No heightfield data available")
-            
-            # Get mode
-            mode = self.get_property('mode') or 'Normalized (1 - x)'
-            
-            print(f"{self.name()}: Inverting with mode: {mode}")
-            
-            # Invert based on mode
-            if 'Normalized' in mode:
-                # Simple inversion: 1 - x (assumes values in [0, 1])
-                inverted = 1.0 - heightfield
-            else:
-                # Range flip: inverts within the actual data range
-                # This preserves the range but flips high/low values
-                h_min = heightfield.min()
-                h_max = heightfield.max()
-                if h_max > h_min:
-                    inverted = h_max - heightfield + h_min
-                else:
-                    # If all values are the same, just return as-is
-                    inverted = heightfield.copy()
-            
-            print(f"{self.name()}: Inverted heightfield, "
-                  f"input range=[{heightfield.min():.3f}, {heightfield.max():.3f}], "
-                  f"output range=[{inverted.min():.3f}, {inverted.max():.3f}]")
-            
-            self.set_output_data(inverted.astype(np.float32))
-            self.signals.execution_finished.emit(self)
-            return inverted
-            
-        except Exception as e:
-            print(f"{self.name()}: ERROR - {e}")
-            traceback.print_exc()
-            raise
-        
+    """Invert a heightfield."""
 
-class DomainWarpNode(TerrainBaseNode):
-    """Node that applies domain warping to a heightfield."""
-    
-    # Node metadata
-    NODE_NAME = 'Domain Warp'
-    
+    NODE_NAME = "Invert"
+    INPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+    OUTPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+
     def __init__(self):
         super().__init__()
-        self.set_name(self.NODE_NAME)
-        self.set_color(150, 100, 80)
-        
-        # Add input port for heightfield only
-        self.add_input('heightfield', color=(150, 200, 150))
-        
-        # Add output port for warped heightfield
-        self.add_output('heightfield', color=(150, 200, 150))
-        
-        # Add domain warp parameters
-        self.add_text_input('offset_scale', 'Offset Scale', text='-5.0')
-        self.add_text_input('offset_lower', 'Offset Lower', text='1.5')
-        self.add_text_input('offset_upper', 'Offset Upper', text='inf')
-        self.add_text_input('offset_amplitude', 'Warp Strength', text='150.0')
-        self.add_text_input('seed', 'Seed', text='42')
-    
-    def execute(self) -> Optional[np.ndarray]:
-        """Execute: apply domain warp to heightfield."""
-        try:
-            print(f"{self.name()}: Starting execution")
-            
-            # Get heightfield from connected node
-            heightfield_port = self.inputs().get('heightfield')
-            if heightfield_port is None:
-                raise ValueError("Heightfield port not found")
-            
-            connected_ports = heightfield_port.connected_ports()
-            if not connected_ports:
-                raise ValueError("No heightfield input connected")
-            
-            # Get the connected node and execute if needed
-            source_port = connected_ports[0]
-            source_node = source_port.node()
-            
-            if isinstance(source_node, TerrainBaseNode):
-                if source_node._is_dirty:
-                    source_node.execute()
-                heightfield = source_node.get_output_data()
+        self.set_color(130, 100, 140)
+        self.add_input("heightfield", color=(150, 200, 150))
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_combo_menu("mode", "Mode", items=["Normalized (1 - x)", "Range Flip (max - x + min)"])
+        self.set_property("mode", "Normalized (1 - x)")
+
+    def execute(self):
+        source = self.get_input_heightfield("heightfield")
+        mode = str(self.get_property("mode") or "Normalized (1 - x)")
+        array = source.array.astype(np.float32)
+        if "Normalized" in mode:
+            result = 1.0 - array
+        else:
+            min_value = float(array.min())
+            max_value = float(array.max())
+            result = max_value - array + min_value
+        payload = source.with_array(result.astype(np.float32), name=self._base_name)
+        self.set_output_data(payload)
+        self.signals.execution_finished.emit(self)
+        return payload
+
+
+class NormalizeClampNode(TerrainBaseNode):
+    """Normalize and clamp a heightfield."""
+
+    NODE_NAME = "Normalize/Clamp"
+    INPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+    OUTPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(110, 110, 150)
+        self.add_input("heightfield", color=(150, 200, 150))
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_combo_menu("mode", "Mode", items=["Normalize", "Clamp"])
+        self.set_property("mode", "Normalize")
+        self.add_text_input("clamp_min", "Clamp Min", text="0.0")
+        self.add_text_input("clamp_max", "Clamp Max", text="1.0")
+
+    def execute(self):
+        source = self.get_input_heightfield("heightfield")
+        array = source.array.astype(np.float32)
+        mode = str(self.get_property("mode") or "Normalize")
+        if mode == "Clamp":
+            out = np.clip(array, _parse_float(self.get_property("clamp_min"), 0.0), _parse_float(self.get_property("clamp_max"), 1.0))
+        else:
+            min_value = float(array.min())
+            max_value = float(array.max())
+            if max_value > min_value:
+                out = (array - min_value) / (max_value - min_value)
             else:
-                raise ValueError("Invalid heightfield source")
-            
-            if heightfield is None:
-                raise ValueError("No heightfield data available")
-            
-            # Get dimension from global context
-            dim = self.context.get_resolution()
-            print(f"{self.name()}: Using global dimension: {dim}")
-            
-            # Parse parameters
-            offset_scale = float(self.get_property('offset_scale'))
-            offset_lower_str = self.get_property('offset_lower')
-            offset_lower = float('inf') if offset_lower_str.lower() == 'inf' else float(offset_lower_str)
-            offset_upper_str = self.get_property('offset_upper')
-            offset_upper = float('inf') if offset_upper_str.lower() == 'inf' else float(offset_upper_str)
-            offset_amplitude = float(self.get_property('offset_amplitude'))
-            seed = int(self.get_property('seed'))
-            
-            print(f"{self.name()}: Parameters - offset_scale={offset_scale}, "
-                  f"offset_lower={offset_lower}, offset_upper={offset_upper}, "
-                  f"offset_amplitude={offset_amplitude}, seed={seed}")
-            
-            # Import the FBM noise generator
-            from terrain_generator.core import ConsistentFBMNoise
-            
-            # Generate offset noise fields
-            print(f"{self.name()}: Generating offset noise fields...")
-            
-            # Use different seed offsets for X and Y to ensure they're different
-            fbm_x = ConsistentFBMNoise(
-                scale=offset_scale,
-                octaves=6,
-                persistence=0.5,
-                lacunarity=2.0,
-                lower=offset_lower,
-                upper=offset_upper,
-                seed_offset=1000,
-                base_seed=seed
-            )
-            
-            fbm_y = ConsistentFBMNoise(
-                scale=offset_scale,
-                octaves=6,
-                persistence=0.5,
-                lacunarity=2.0,
-                lower=offset_lower,
-                upper=offset_upper,
-                seed_offset=2000,
-                base_seed=seed
-            )
-            
-            offset_x = fbm_x.generate((dim, dim))
-            offset_y = fbm_y.generate((dim, dim))
-            
-            # Create complex offset field
-            offsets = offset_amplitude * (offset_x + 1j * offset_y)
-            
-            # Apply domain warp using bilinear sampling
-            print(f"{self.name()}: Applying domain warp...")
-            warped_heightfield = self._sample(heightfield, offsets)
-            
-            print(f"{self.name()}: Domain warp complete, "
-                  f"range=[{warped_heightfield.min():.3f}, {warped_heightfield.max():.3f}]")
-            
-            self.set_output_data(warped_heightfield)
-            self.signals.execution_finished.emit(self)
-            return warped_heightfield
-            
-        except Exception as e:
-            print(f"{self.name()}: ERROR - {e}")
-            traceback.print_exc()
-            raise
-    
-    @staticmethod
-    def _sample(a: np.ndarray, offset: np.ndarray) -> np.ndarray:
-        """Sample array with domain warping using bilinear interpolation."""
-        shape = np.array(a.shape)
-        delta = np.array((offset.real, offset.imag))
-        
-        # Create coordinate grid
-        coords = np.array(np.meshgrid(*map(range, shape), indexing='ij')) - delta
-        
-        # Get lower and upper coordinates
-        lower_coords = np.floor(coords).astype(int)
-        upper_coords = lower_coords + 1
-        coord_offsets = coords - lower_coords
-        
-        # Wrap coordinates (periodic boundary conditions)
-        lower_coords[0] = lower_coords[0] % shape[0]
-        lower_coords[1] = lower_coords[1] % shape[1]
-        upper_coords[0] = upper_coords[0] % shape[0]
-        upper_coords[1] = upper_coords[1] % shape[1]
-        
-        # Bilinear interpolation
-        def lerp(a, b, t):
-            return a * (1 - t) + b * t
-        
-        return lerp(
-            lerp(a[lower_coords[0], lower_coords[1]],
-                 a[lower_coords[0], upper_coords[1]],
-                 coord_offsets[1]),
-            lerp(a[upper_coords[0], lower_coords[1]],
-                 a[upper_coords[0], upper_coords[1]],
-                 coord_offsets[1]),
-            coord_offsets[0]
-        )
+                out = np.zeros_like(array, dtype=np.float32)
+        payload = source.with_array(out.astype(np.float32), name=self._base_name)
+        self.set_output_data(payload)
+        self.signals.execution_finished.emit(self)
+        return payload
+
+
+class LandMaskNode(TerrainBaseNode):
+    """Build a land mask from a heightfield."""
+
+    NODE_NAME = "Land Mask"
+    INPUT_TYPES = {"heightfield": (PORT_TYPE_HEIGHTFIELD,)}
+    OUTPUT_TYPES = {"land_mask": (PORT_TYPE_MASK,)}
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(90, 140, 90)
+        self.add_input("heightfield", color=(150, 200, 150))
+        self.add_output("land_mask", color=(120, 180, 120))
+        self.add_text_input("sea_level", "Sea Level", text="0.0")
+
+    def execute(self):
+        source = self.get_input_heightfield("heightfield")
+        sea_level = _parse_float(self.get_property("sea_level"), 0.0)
+        mask = MaskData(array=np.asarray(source.array > sea_level, dtype=bool), name=self._base_name)
+        self.set_output_data(mask)
+        self.signals.execution_finished.emit(self)
+        return mask
+
+
+MapPropertiesNode = ProjectSettingsNode
+GenerateLandMaskNode = LandMaskNode
