@@ -280,13 +280,6 @@ class WorldSettingsNode(TerrainBaseNode):
         self.add_text_input("z_min", "Elevation Min", text="0")
         self.add_text_input("z_max", "Elevation Max", text="6000")
         self.add_text_input("sea_level_m", "Sea Level (m)", text="0")
-        self.add_text_input("tpi_radii_text", "TPI Radii", text="25, 100")
-        self.add_combo_menu("temperature_pattern", "Temperature", items=["polar", "equatorial", "gradient"])
-        self.set_property("temperature_pattern", "polar")
-        self.add_combo_menu("precip_lat_pattern", "Precipitation", items=["two_bands", "single_band", "uniform", "gradient"])
-        self.set_property("precip_lat_pattern", "two_bands")
-        self.add_combo_menu("prevailing_wind_model", "Wind", items=["three_cell", "constant"])
-        self.set_property("prevailing_wind_model", "three_cell")
         self.add_combo_menu("use_random_biomes", "Random Biomes", items=["False", "True"])
         self.set_property("use_random_biomes", "False")
         self.add_combo_menu("use_simulated_flow", "Use Sim Flow", items=["True", "False"])
@@ -299,14 +292,6 @@ class WorldSettingsNode(TerrainBaseNode):
             "z_min": _parse_float(self.get_property("z_min"), 0.0),
             "z_max": _parse_float(self.get_property("z_max"), 6000.0),
             "sea_level_m": _parse_float(self.get_property("sea_level_m"), 0.0),
-            "tpi_radii": tuple(
-                float(chunk.strip())
-                for chunk in str(self.get_property("tpi_radii_text") or "25,100").split(",")
-                if chunk.strip()
-            ) or (25.0, 100.0),
-            "temperature_pattern": self.get_property("temperature_pattern") or "polar",
-            "precip_lat_pattern": self.get_property("precip_lat_pattern") or "two_bands",
-            "prevailing_wind_model": self.get_property("prevailing_wind_model") or "three_cell",
             "use_random_biomes": (self.get_property("use_random_biomes") == "True"),
             "use_simulated_flow": (self.get_property("use_simulated_flow") == "True"),
         }

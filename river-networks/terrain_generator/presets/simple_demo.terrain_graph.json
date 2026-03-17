@@ -22,10 +22,6 @@
         "z_min": "0",
         "z_max": "6000",
         "sea_level_m": "0",
-        "tpi_radii_text": "25, 100",
-        "temperature_pattern": "polar",
-        "precip_lat_pattern": "two_bands",
-        "prevailing_wind_model": "three_cell",
         "use_random_biomes": "False",
         "use_simulated_flow": "True"
       }

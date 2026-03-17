@@ -41,10 +41,8 @@ class NodeGraphContext:
             "z_min": 0.0,
             "z_max": 6000.0,
             "sea_level_m": 0.0,
-            "temperature_pattern": "polar",
-            "precip_lat_pattern": "two_bands",
-            "prevailing_wind_model": "three_cell",
-            "tpi_radii": (25.0, 100.0),
+            "use_random_biomes": False,
+            "use_simulated_flow": True,
         }
 
     def get_resolution(self) -> int:

@@ -37,6 +37,8 @@ class HeuristicSpec:
     needs_deposition: bool = False
     needs_rock_map: bool = False
     supports_flow_override: bool = False
+    uses_temperature_settings: bool = False
+    uses_precipitation_settings: bool = False
 
 
 def _selection_for_spec(spec: HeuristicSpec, radius_m: float) -> str:
@@ -75,9 +77,17 @@ class HeuristicMapNode(TerrainBaseNode):
         self.add_input("deposition_map", color=(150, 200, 150))
         self.add_input("rock_map", color=(150, 200, 150))
         self.add_output("map_overlay", color=(180, 180, 120))
-        self.add_text_input("cellsize_override", "Cell Size Override", text=str(self.SPEC.default_cellsize))
+        self.add_text_input("cellsize_override", "Cell Size Override (m)", text=str(self.SPEC.default_cellsize))
         if self.SPEC.uses_tpi_radius:
             self.add_text_input("radius_m", "Radius (m)", text="25.0")
+        if self.SPEC.uses_temperature_settings:
+            self.add_combo_menu("temperature_pattern", "Temperature Pattern", items=["polar", "equatorial", "gradient"])
+            self.set_property("temperature_pattern", "polar")
+        if self.SPEC.uses_precipitation_settings:
+            self.add_combo_menu("precip_lat_pattern", "Precipitation Pattern", items=["two_bands", "single_band", "uniform", "gradient"])
+            self.set_property("precip_lat_pattern", "two_bands")
+            self.add_combo_menu("prevailing_wind_model", "Wind Model", items=["three_cell", "constant"])
+            self.set_property("prevailing_wind_model", "three_cell")
 
     def _resolve_sources(self) -> Tuple[HeightfieldData, Optional[TerrainBundleData]]:
         bundle = self.get_input_data("terrain_bundle", required=False, expected_types=(PORT_TYPE_TERRAIN_BUNDLE,))
@@ -89,10 +99,16 @@ class HeuristicMapNode(TerrainBaseNode):
         raise ValueError(f"{self._base_name} requires either a terrain bundle or heightfield input.")
 
     def _build_settings(self) -> Dict[str, Any]:
-        world_settings = dict(self.context.get_world_settings())
+        world_settings = HeuristicSettings().__dict__.copy()
+        world_settings.update(self.context.get_world_settings())
         cellsize_override = _parse_float(self.get_property("cellsize_override"), 0.0)
         if cellsize_override > 0.0:
             world_settings["cellsize"] = cellsize_override
+        if self.SPEC.uses_temperature_settings:
+            world_settings["temperature_pattern"] = self.get_property("temperature_pattern") or world_settings["temperature_pattern"]
+        if self.SPEC.uses_precipitation_settings:
+            world_settings["precip_lat_pattern"] = self.get_property("precip_lat_pattern") or world_settings["precip_lat_pattern"]
+            world_settings["prevailing_wind_model"] = self.get_property("prevailing_wind_model") or world_settings["prevailing_wind_model"]
         world_settings.pop("use_simulated_flow", None)
         return world_settings
 
@@ -219,17 +235,17 @@ _HEURISTIC_SPECS: Dict[str, HeuristicSpec] = {
     "FlowAccumulationHeuristicNode": HeuristicSpec("Flow Accumulation", "flowacc", "flowacc", "flowacc_log", supports_flow_override=True),
     "TWIHeuristicNode": HeuristicSpec("TWI", "twi", "twi", "twi"),
     "SVFHeuristicNode": HeuristicSpec("Sky View Factor", "svf", "svf", "svf"),
-    "TemperatureHeuristicNode": HeuristicSpec("Temperature", "climate", "temp_c", "temp_c"),
-    "PrecipitationHeuristicNode": HeuristicSpec("Precipitation", "climate", "precip_mm", "precip_mm"),
-    "PETHeuristicNode": HeuristicSpec("PET", "climate", "PET", "PET"),
-    "AETHeuristicNode": HeuristicSpec("AET", "climate", "AET", "AET"),
-    "AridityHeuristicNode": HeuristicSpec("Aridity", "climate", "AI", "AI"),
-    "BiomeHeuristicNode": HeuristicSpec("Biome", "biome", "biome_rgb", "biome_map", overlay_kind="rgb"),
-    "AlbedoHeuristicNode": HeuristicSpec("Albedo", "albedo", "albedo_rgb", "terrain_albedo", overlay_kind="rgb", needs_deposition=True, needs_rock_map=True),
-    "ContinuousAlbedoHeuristicNode": HeuristicSpec("Continuous Albedo", "albedo_continuous", "albedo_continuous_rgb", "terrain_albedo_continuous", overlay_kind="rgb"),
-    "FoliageColorHeuristicNode": HeuristicSpec("Foliage Color", "foliage", "foliage_rgb", "foliage_color", overlay_kind="rgb"),
-    "ForestDensityHeuristicNode": HeuristicSpec("Forest Density", "forest_density", "forest_density", "forest_density"),
-    "GroundcoverDensityHeuristicNode": HeuristicSpec("Groundcover Density", "groundcover_density", "groundcover_density", "groundcover_density"),
+    "TemperatureHeuristicNode": HeuristicSpec("Temperature", "climate", "temp_c", "temp_c", uses_temperature_settings=True),
+    "PrecipitationHeuristicNode": HeuristicSpec("Precipitation", "climate", "precip_mm", "precip_mm", uses_precipitation_settings=True),
+    "PETHeuristicNode": HeuristicSpec("PET", "climate", "PET", "PET", uses_temperature_settings=True),
+    "AETHeuristicNode": HeuristicSpec("AET", "climate", "AET", "AET", uses_temperature_settings=True, uses_precipitation_settings=True),
+    "AridityHeuristicNode": HeuristicSpec("Aridity", "climate", "AI", "AI", uses_temperature_settings=True, uses_precipitation_settings=True),
+    "BiomeHeuristicNode": HeuristicSpec("Biome", "biome", "biome_rgb", "biome_map", overlay_kind="rgb", uses_temperature_settings=True, uses_precipitation_settings=True),
+    "AlbedoHeuristicNode": HeuristicSpec("Albedo", "albedo", "albedo_rgb", "terrain_albedo", overlay_kind="rgb", needs_deposition=True, needs_rock_map=True, uses_temperature_settings=True, uses_precipitation_settings=True),
+    "ContinuousAlbedoHeuristicNode": HeuristicSpec("Continuous Albedo", "albedo_continuous", "albedo_continuous_rgb", "terrain_albedo_continuous", overlay_kind="rgb", uses_temperature_settings=True, uses_precipitation_settings=True),
+    "FoliageColorHeuristicNode": HeuristicSpec("Foliage Color", "foliage", "foliage_rgb", "foliage_color", overlay_kind="rgb", uses_temperature_settings=True, uses_precipitation_settings=True),
+    "ForestDensityHeuristicNode": HeuristicSpec("Forest Density", "forest_density", "forest_density", "forest_density", uses_temperature_settings=True, uses_precipitation_settings=True),
+    "GroundcoverDensityHeuristicNode": HeuristicSpec("Groundcover Density", "groundcover_density", "groundcover_density", "groundcover_density", uses_temperature_settings=True, uses_precipitation_settings=True),
 }
 
 

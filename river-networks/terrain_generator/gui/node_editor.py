@@ -785,10 +785,45 @@ class NodeEditorWidget(QWidget):
         pinned_id = node_ids.get(self.pinned_node) if self.pinned_node is not None else None
         return build_graph_payload(nodes=nodes_payload, connections=connections, pinned_node_id=pinned_id, metadata={"cwd": os.getcwd()})
 
+    @staticmethod
+    def _migrate_legacy_heuristic_properties(
+        node_cls: Type[TerrainBaseNode],
+        properties: Optional[Dict[str, object]],
+        world_settings_properties: Dict[str, object],
+    ) -> Dict[str, object]:
+        migrated = dict(properties or {})
+        if not issubclass(node_cls, HeuristicMapNode):
+            return migrated
+
+        spec = getattr(node_cls, "SPEC", None)
+        if spec is None:
+            return migrated
+
+        if getattr(spec, "uses_temperature_settings", False) and "temperature_pattern" not in migrated:
+            if "temperature_pattern" in world_settings_properties:
+                migrated["temperature_pattern"] = world_settings_properties["temperature_pattern"]
+
+        if getattr(spec, "uses_precipitation_settings", False):
+            if "precip_lat_pattern" not in migrated and "precip_lat_pattern" in world_settings_properties:
+                migrated["precip_lat_pattern"] = world_settings_properties["precip_lat_pattern"]
+            if "prevailing_wind_model" not in migrated and "prevailing_wind_model" in world_settings_properties:
+                migrated["prevailing_wind_model"] = world_settings_properties["prevailing_wind_model"]
+
+        return migrated
+
     def _apply_graph_payload(self, payload: Dict[str, object]):
         nodes_data = payload.get("nodes", []) or []
         connections = payload.get("connections", []) or []
         pinned_id = payload.get("pinned_node_id")
+        world_settings_type = self.create_type_lookup.get("WorldSettingsNode")
+        world_settings_properties: Dict[str, object] = {}
+        for entry in nodes_data:
+            if entry.get("node_type") != world_settings_type:
+                continue
+            candidate = entry.get("properties", {})
+            if isinstance(candidate, dict):
+                world_settings_properties = dict(candidate)
+            break
         self.clear_graph(skip_confirmation=True, recreate_globals=False)
         created = {}
         for entry in nodes_data:
@@ -796,11 +831,16 @@ class NodeEditorWidget(QWidget):
             node_cls = self.node_type_registry.get(node_type)
             if node_cls is None:
                 continue
+            properties = entry.get("properties", {})
+            if isinstance(properties, dict):
+                properties = self._migrate_legacy_heuristic_properties(node_cls, properties, world_settings_properties)
+            else:
+                properties = self._migrate_legacy_heuristic_properties(node_cls, None, world_settings_properties)
             node = self._create_node_instance(
                 node_cls,
                 name=entry.get("name"),
                 pos=tuple(entry.get("pos", [0, 0])),
-                properties=entry.get("properties", {}),
+                properties=properties,
             )
             node._persist_id = entry.get("id", uuid.uuid4().hex)
             created[node._persist_id] = node
