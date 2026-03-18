@@ -129,6 +129,7 @@ def _variable_max_delta_kernel(points_height, terrace_count, terrace_thickness,
 class TerrainParameters:
     """Parameters for terrain generation."""
     dimension: int = 256
+    terrain_size_km: float = 1536.0
     seed: int = 42
     disc_radius: float = 1.0
     
@@ -230,6 +231,7 @@ class TerrainGenerator:
     
     # Fixed resolution for consistent heightfield generation
     BASE_RESOLUTION = 512
+    LEGACY_SCALE_RESOLUTION = 1024.0
     
     def __init__(self, params: TerrainParameters):
         self.params = params
@@ -257,6 +259,25 @@ class TerrainGenerator:
         np.clip(coords[:, 0], 0, h - 1, out=coords[:, 0])  # row / y
         np.clip(coords[:, 1], 0, w - 1, out=coords[:, 1])  # col / x
         return coords
+
+    @property
+    def terrain_size_m(self) -> float:
+        """Return the world-space terrain width in meters."""
+        return max(float(self.params.terrain_size_km), 1e-6) * 1000.0
+
+    def _cellsize_m(self, shape: Tuple[int, int]) -> float:
+        """Return the world-space cell size for a raster shape."""
+        resolution = max(float(shape[0]), 1.0)
+        return self.terrain_size_m / resolution
+
+    def _legacy_units_to_cells(self, value: float, shape: Tuple[int, int]) -> float:
+        """Convert legacy scale-dependent values into raster cells for the target shape."""
+        return max(float(value), 0.0) * (float(shape[0]) / self.LEGACY_SCALE_RESOLUTION)
+
+    def _legacy_area_to_pixels(self, value: float, shape: Tuple[int, int]) -> int:
+        """Convert legacy pixel-count area thresholds into the target raster resolution."""
+        scale = float(shape[0]) / self.LEGACY_SCALE_RESOLUTION
+        return max(1, int(round(max(float(value), 0.0) * scale * scale)))
     
     def generate(self, progress_callback=None) -> TerrainData:
         """Generate complete terrain with rivers."""
@@ -405,17 +426,13 @@ class TerrainGenerator:
                 blur_iterations=int(base_params.get('erosion_blur_iterations', self.params.erosion_blur_iterations))
             )
 
-            # Scale erosion parameters based on dimension
-            dim_scale = self.params.dimension / 256.0
-            if dim_scale > 1.5:
-                erosion.iterations = int(erosion.iterations * np.sqrt(dim_scale))
-                step_multiplier = np.sqrt(dim_scale) * 0.5
-                erosion.step_size *= step_multiplier
-                erosion.max_lifetime = int(erosion.max_lifetime * np.sqrt(dim_scale))
-                if 'erosion_step_size' in erosion_maps:
-                    erosion_maps['erosion_step_size'] = np.ascontiguousarray(
-                        erosion_maps['erosion_step_size'] * step_multiplier
-                    )
+            step_scale = float(target_shape[0]) / self.LEGACY_SCALE_RESOLUTION
+            erosion.step_size *= step_scale
+            erosion.max_lifetime = max(1, int(round(erosion.max_lifetime / max(step_scale, 1e-6))))
+            if 'erosion_step_size' in erosion_maps:
+                erosion_maps['erosion_step_size'] = np.ascontiguousarray(
+                    erosion_maps['erosion_step_size'] * step_scale
+                )
 
             # Preserve the original height scale
             max_height = terrain_height.max()
@@ -631,7 +648,7 @@ class TerrainGenerator:
         
         # Apply exponential falloff
         # Distance is measured inward from the edge
-        falloff_distance = self.params.edge_falloff_distance
+        falloff_distance = self._legacy_units_to_cells(self.params.edge_falloff_distance, shape)
         falloff_rate = self.params.edge_falloff_rate
         
         # Calculate mask value based on distance from edge
@@ -689,7 +706,7 @@ class TerrainGenerator:
         values = self._fbm(shape, self.params.fbm_scale, 
                         self.params.fbm_lower, self.params.fbm_upper)
         
-        offset_amplitude = self.params.offset_amplitude
+        offset_amplitude = self._legacy_units_to_cells(self.params.offset_amplitude, shape)
         
         offset_x = self._fbm(shape, self.params.offset_scale,
                             self.params.offset_lower, self.params.offset_upper)
@@ -732,8 +749,9 @@ class TerrainGenerator:
         )
         
         # Step 5: Blur to smooth beaches
-        if self.params.blur_distance > 0:
-            flooded_heightfield = gaussian_blur(flooded_heightfield, sigma=self.params.blur_distance)
+        blur_distance = self._legacy_units_to_cells(self.params.blur_distance, shape)
+        if blur_distance > 0:
+            flooded_heightfield = gaussian_blur(flooded_heightfield, sigma=blur_distance)
         
         # Step 6: Define land mask
         land_mask = flooded_heightfield > 0.001
@@ -742,7 +760,7 @@ class TerrainGenerator:
         print("Checking for inland seas...")
         flooded_heightfield, land_mask = connect_inland_seas(
             flooded_heightfield, land_mask,
-            min_sea_size=30  # Adjust this threshold as needed
+            min_sea_size=self._legacy_area_to_pixels(30, shape)
         )
         
         # Ensure ocean stays at exactly 0
@@ -758,11 +776,7 @@ class TerrainGenerator:
                     0.0
                 )
         
-        # Scale height by dimension for final output
-        height_scale = self.params.dimension / 256.0
-        final_heightfield = flooded_heightfield * height_scale
-        
-        return final_heightfield, land_mask
+        return flooded_heightfield.astype(np.float32), land_mask
     
     def _load_imported_heightmap(self):
         """Load and cache imported heightmap."""
@@ -780,7 +794,8 @@ class TerrainGenerator:
     
     def _create_triangulation(self, shape: Tuple[int, int]) -> Tuple[np.ndarray, Any, List, List]:
         """Create point sampling and Delaunay triangulation with distance weights (Numba-accelerated)."""
-        points = poisson_disc_sampling(shape, self.params.disc_radius)
+        disc_radius_cells = self._legacy_units_to_cells(self.params.disc_radius, shape)
+        points = poisson_disc_sampling(shape, max(disc_radius_cells, 1e-3))
         tri = scipy.spatial.Delaunay(points)
 
         # SciPy returns (indptr, indices); neighbors of k are indices[indptr[k]:indptr[k+1]]
@@ -789,8 +804,7 @@ class TerrainGenerator:
         # Build neighbors list in the format your pipeline expects
         neighbors = [indices[indptr[k]:indptr[k + 1]] for k in range(len(points))]
 
-        dim_scale = self.params.dimension / 256.0
-        distance_normalizer = 1.0 / dim_scale
+        distance_normalizer = self._cellsize_m(shape)
 
         # Compute edge weights flat, then slice per vertex
         if _NUMBA:
@@ -863,13 +877,10 @@ class TerrainGenerator:
 
         result = self._run_dijkstra(indptr, indices, edge_costs, dim, seed_idx)
 
-        # Scale heights by dimension ratio
-        height_scale = self.params.dimension / 256.0
-        result = result * height_scale
-
-        # DON'T normalize to [0,1] - keep the scaled range!
-        # Just ensure minimum is 0
         result = result - result.min()
+        max_height = result.max()
+        if max_height > 0.0:
+            result = result / max_height
         return result
 
     def _compute_final_height(self, points: np.ndarray, neighbors: List[np.ndarray],
@@ -948,10 +959,10 @@ class TerrainGenerator:
         seed_idx = int(np.argmin(points.sum(axis=1)))
         result = self._run_dijkstra(indptr, indices, edge_costs, dim, seed_idx)
 
-        # Scale and rebase exactly like your original
-        height_scale = self.params.dimension / 256.0
-        result = result * height_scale
         result = result - result.min()
+        max_height = result.max()
+        if max_height > 0.0:
+            result = result / max_height
         return result
 
     def _default_erosion_settings(self) -> Dict[str, float]:

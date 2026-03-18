@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from ...heuristics import HeuristicEngine, HeuristicSettings, qimage_to_rgba
-from .base_nodes import TerrainBaseNode, _parse_float
+from .base_nodes import TerrainBaseNode, _parse_float, _parse_int
 from .contracts import (
     HeightfieldData,
     MapOverlayData,
@@ -110,6 +110,7 @@ class HeuristicMapNode(TerrainBaseNode):
         world_settings.update(self.context.get_world_settings())
         cellsize_override = _parse_float(self.get_property("cellsize_override"), 0.0)
         if cellsize_override > 0.0:
+            world_settings["terrain_size_km"] = 0.0
             world_settings["cellsize"] = cellsize_override
         if self.SPEC.selection_key == "svf":
             world_settings["svf_dirs"] = max(1, _parse_int(self.get_property("svf_dirs"), 16))

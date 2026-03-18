@@ -79,6 +79,17 @@ def _parse_points_text(raw_text: str, fallback: Sequence[Tuple[float, float]]) -
     return result or list(fallback)
 
 
+def _legacy_distance_to_cells(value: float, resolution: int, legacy_resolution: float = 1024.0) -> float:
+    """Convert legacy pixel-based distances into cell distances for the active resolution."""
+    return max(float(value), 0.0) * (max(int(resolution), 1) / legacy_resolution)
+
+
+def _legacy_area_to_pixels(value: float, resolution: int, legacy_resolution: float = 1024.0) -> int:
+    """Convert legacy pixel-count areas into the active raster resolution."""
+    scale = max(int(resolution), 1) / legacy_resolution
+    return max(1, int(round(max(float(value), 0.0) * scale * scale)))
+
+
 class NodeSignals(QObject):
     """Signals emitted by nodes as they execute."""
 
@@ -386,7 +397,8 @@ class WorldSettingsNode(TerrainBaseNode):
         super().__init__()
         self.set_color(70, 90, 130)
         self.add_output("settings", color=(120, 160, 220))
-        self.add_text_input("cellsize", "Cell Size (m)", text="1500")
+        self.add_text_input("terrain_size_km", "Terrain Size (km)", text="0")
+        self.add_text_input("cellsize", "Cell Size Fallback (m)", text="1500")
         self.add_text_input("z_min", "Elevation Min", text="0")
         self.add_text_input("z_max", "Elevation Max", text="6000")
         self.add_text_input("sea_level_m", "Sea Level (m)", text="0")
@@ -416,8 +428,15 @@ class WorldSettingsNode(TerrainBaseNode):
         self.context.set_world_settings_node(self)
 
     def collect_settings(self) -> Dict[str, Any]:
+        resolution = self.context.get_resolution()
+        terrain_size_km = _parse_float(self.get_property("terrain_size_km"), 0.0)
+        legacy_cellsize = _parse_float(self.get_property("cellsize"), 1500.0)
+        if terrain_size_km <= 0.0:
+            terrain_size_km = max(legacy_cellsize, 1e-6) * resolution / 1000.0
+        resolved_cellsize = terrain_size_km * 1000.0 / max(resolution, 1)
         return {
-            "cellsize": _parse_float(self.get_property("cellsize"), 1500.0),
+            "terrain_size_km": terrain_size_km,
+            "cellsize": resolved_cellsize,
             "z_min": _parse_float(self.get_property("z_min"), 0.0),
             "z_max": _parse_float(self.get_property("z_max"), 6000.0),
             "sea_level_m": _parse_float(self.get_property("sea_level_m"), 0.0),
@@ -832,7 +851,7 @@ class DomainWarpNode(TerrainBaseNode):
         scale = _parse_float(self.get_property("offset_scale"), -5.0)
         lower = _parse_float(self.get_property("offset_lower"), 1.5)
         upper = _parse_float(self.get_property("offset_upper"), float("inf"))
-        amplitude = _parse_float(self.get_property("offset_amplitude"), 150.0)
+        amplitude = _legacy_distance_to_cells(_parse_float(self.get_property("offset_amplitude"), 150.0), dim)
         fbm_x = ConsistentFBMNoise(
             scale=scale,
             octaves=6,
@@ -944,7 +963,7 @@ class GaussianBlurNode(TerrainBaseNode):
 
     def execute(self):
         source = self.get_input_heightfield("heightfield")
-        sigma = max(_parse_float(self.get_property("sigma"), 0.0), 0.0)
+        sigma = max(_legacy_distance_to_cells(_parse_float(self.get_property("sigma"), 0.0), source.array.shape[0]), 0.0)
         if sigma <= 0.0:
             payload = source.with_array(source.array.copy(), name=self._base_name)
         else:
@@ -992,7 +1011,7 @@ class ConnectInlandSeasNode(TerrainBaseNode):
         adjusted_height, adjusted_land = connect_inland_seas(
             source.array,
             land_mask_array,
-            min_sea_size=max(_parse_int(self.get_property("min_lake_size"), 30), 1),
+            min_sea_size=_legacy_area_to_pixels(_parse_int(self.get_property("min_lake_size"), 30), source.array.shape[0]),
             carve_depth=max(_parse_float(self.get_property("carve_depth"), 0.1), 0.0),
             fill_height=max(_parse_float(self.get_property("fill_height"), 0.01), 0.0),
             water_level=sea_level,

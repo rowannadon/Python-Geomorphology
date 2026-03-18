@@ -8,6 +8,8 @@ from typing import Any, Dict, Optional, Tuple
 class NodeGraphContext:
     """Shared state and caches used across all nodes in the graph."""
 
+    DEFAULT_CELL_SIZE_M = 1500.0
+
     def __init__(self):
         self._project_settings_node = None
         self._world_settings_node = None
@@ -36,8 +38,11 @@ class NodeGraphContext:
     def get_world_settings(self) -> Dict[str, Any]:
         if self._world_settings_node is not None:
             return self._world_settings_node.collect_settings()
+        resolution = self.get_resolution()
+        terrain_size_km = (self.DEFAULT_CELL_SIZE_M * resolution) / 1000.0
         return {
-            "cellsize": 1500.0,
+            "terrain_size_km": terrain_size_km,
+            "cellsize": self.DEFAULT_CELL_SIZE_M,
             "z_min": 0.0,
             "z_max": 6000.0,
             "sea_level_m": 0.0,
@@ -60,6 +65,26 @@ class NodeGraphContext:
             "use_random_biomes": False,
             "use_simulated_flow": True,
         }
+
+    def get_terrain_size_km(self) -> float:
+        settings = self.get_world_settings()
+        try:
+            terrain_size_km = float(settings.get("terrain_size_km", 0.0))
+        except (TypeError, ValueError):
+            terrain_size_km = 0.0
+        if terrain_size_km > 0.0:
+            return terrain_size_km
+        resolution = self.get_resolution()
+        try:
+            cellsize = float(settings.get("cellsize", self.DEFAULT_CELL_SIZE_M))
+        except (TypeError, ValueError):
+            cellsize = self.DEFAULT_CELL_SIZE_M
+        return max(cellsize, 1e-6) * resolution / 1000.0
+
+    def get_cellsize_m(self, resolution: Optional[int] = None) -> float:
+        if resolution is None:
+            resolution = self.get_resolution()
+        return max(self.get_terrain_size_km() * 1000.0 / max(int(resolution), 1), 1e-6)
 
     def get_resolution(self) -> int:
         settings = self.get_project_settings()

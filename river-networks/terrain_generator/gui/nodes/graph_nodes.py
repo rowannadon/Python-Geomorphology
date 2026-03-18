@@ -31,7 +31,12 @@ from .contracts import (
 )
 
 
-def _make_generator(**kwargs: Any) -> TerrainGenerator:
+def _make_generator(*, context=None, **kwargs: Any) -> TerrainGenerator:
+    terrain_size_km = kwargs.get("terrain_size_km")
+    if terrain_size_km is None and context is not None:
+        terrain_size_km = context.get_terrain_size_km()
+    if terrain_size_km is not None:
+        kwargs["terrain_size_km"] = float(terrain_size_km)
     params = TerrainParameters(**kwargs)
     return TerrainGenerator(params)
 
@@ -123,6 +128,7 @@ class SampleTerrainGraphNode(TerrainBaseNode):
             raise ValueError("Sample Terrain Graph requires heightfield and land mask to match.")
         dim = self.context.get_resolution()
         generator = _make_generator(
+            context=self.context,
             dimension=dim,
             disc_radius=_parse_float(self.get_property("disc_radius"), 2.0),
             seed=_parse_int(self.get_property("seed"), self.context.get_seed()),
@@ -171,6 +177,7 @@ class SolveBaseGraphElevationNode(TerrainBaseNode):
         if graph.sampled_deltas is None:
             raise ValueError("Terrain graph is missing sampled deltas.")
         generator = _make_generator(
+            context=self.context,
             dimension=graph.dimension,
             max_delta=_parse_float(self.get_property("max_delta"), 0.05),
         )
@@ -216,6 +223,7 @@ class TerraceMaxDeltaNode(TerrainBaseNode):
             return updated
         normalized_heights = normalize(np.asarray(graph.point_height, dtype=np.float64), bounds=(0, 1))
         generator = _make_generator(
+            context=self.context,
             dimension=graph.dimension,
             max_delta=_parse_float(self.get_property("base_max_delta"), 0.05),
             use_variable_max_delta=True,
@@ -262,6 +270,7 @@ class RockStackWarpNode(TerrainBaseNode):
     def execute(self):
         graph = self.get_input_data("terrain_graph", expected_types=(PORT_TYPE_TERRAIN_GRAPH,))
         generator = _make_generator(
+            context=self.context,
             dimension=graph.dimension,
             rock_warp_strength=_parse_float(self.get_property("rock_warp_strength"), 0.0),
             rock_warp_scale=_parse_float(self.get_property("rock_warp_scale"), -2.0),
@@ -324,6 +333,7 @@ class AssignRockLayersNode(TerrainBaseNode):
         if not layers:
             layers = [RockLayerConfig(name="Default", thickness=float("inf"))]
         generator = _make_generator(
+            context=self.context,
             dimension=graph.dimension,
             rock_layers=layers,
             rock_warp_strength=_parse_float(self.get_property("rock_warp_strength"), 0.0),
@@ -422,6 +432,7 @@ class ApplyRiverDowncuttingNode(TerrainBaseNode):
         if graph.point_height is None or graph.sampled_deltas is None:
             raise ValueError("River downcutting requires base graph heights and deltas.")
         terrain_generator = _make_generator(
+            context=self.context,
             dimension=graph.dimension,
             river_downcutting=_parse_float(self.get_property("river_downcutting"), 1.7),
             max_delta=_parse_float(self.get_property("max_delta"), 0.05),
@@ -619,7 +630,7 @@ class BuildErosionParameterMapsNode(TerrainBaseNode):
             self.set_output_data(bundle)
             self.signals.execution_finished.emit(self)
             return bundle
-        generator = _make_generator(dimension=bundle.heightfield.array.shape[0])
+        generator = _make_generator(context=self.context, dimension=bundle.heightfield.array.shape[0])
         erosion_maps = generator._build_parameter_maps(np.asarray(rock_map, dtype=np.int32), list(rock_parameters))
         updated = bundle.with_updates(erosion_parameter_maps=erosion_maps)
         self.set_output_data(updated)
@@ -663,8 +674,9 @@ class ParticleErosionNode(TerrainBaseNode):
         if not erosion_maps and bundle.rock_map is not None:
             rock_parameters = bundle.metadata.get("rock_parameters", []) if bundle.metadata else []
             if rock_parameters:
-                generator = _make_generator(dimension=heightfield.shape[0])
+                generator = _make_generator(context=self.context, dimension=heightfield.shape[0])
                 erosion_maps = generator._build_parameter_maps(np.asarray(bundle.rock_map, dtype=np.int32), list(rock_parameters))
+        step_scale = float(heightfield.shape[0]) / TerrainGenerator.LEGACY_SCALE_RESOLUTION
         erosion = ParticleErosion(
             iterations=_parse_int(self.get_property("erosion_iterations"), 80000),
             inertia=_parse_float(self.get_property("erosion_inertia"), 0.3),
@@ -673,11 +685,15 @@ class ParticleErosionNode(TerrainBaseNode):
             erosion_const=_parse_float(self.get_property("erosion_rate"), 0.4),
             evaporation_const=_parse_float(self.get_property("erosion_evaporation"), 0.98),
             gravity=_parse_float(self.get_property("erosion_gravity"), 10.0),
-            max_lifetime=_parse_int(self.get_property("erosion_max_lifetime"), 60),
-            step_size=_parse_float(self.get_property("erosion_step_size"), 0.3),
+            max_lifetime=max(1, int(round(_parse_int(self.get_property("erosion_max_lifetime"), 60) / max(step_scale, 1e-6)))),
+            step_size=_parse_float(self.get_property("erosion_step_size"), 0.3) * step_scale,
             max_delta=_parse_float(self.get_property("max_delta"), 0.05),
             blur_iterations=_parse_int(self.get_property("erosion_blur_iterations"), 1),
         )
+        if erosion_maps and "erosion_step_size" in erosion_maps:
+            erosion_maps["erosion_step_size"] = np.ascontiguousarray(
+                np.asarray(erosion_maps["erosion_step_size"], dtype=np.float64) * step_scale
+            )
         normalized_terrain = np.asarray(heightfield / max_height, dtype=np.float32)
 
         def progress_callback(percent: int, message: str):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
@@ -15,6 +15,7 @@ from .pipeline.engine import TerrainEngine
 class HeuristicSettings:
     """User-configurable parameters for heuristic computation."""
 
+    terrain_size_km: float = 0.0
     cellsize: float = 1500.0
     z_min: float = 0.0
     z_max: float = 6000.0
@@ -111,6 +112,14 @@ class HeuristicEngine:
             deposition_texture=settings.deposition_texture,
         )
 
+    @staticmethod
+    def _resolve_cellsize(settings: HeuristicSettings, shape: tuple[int, int]) -> float:
+        """Resolve the active horizontal cell size in meters."""
+        if settings.terrain_size_km > 0.0:
+            resolution = max(float(shape[0]), 1.0)
+            return max((settings.terrain_size_km * 1000.0) / resolution, 1e-6)
+        return max(float(settings.cellsize), 1e-6)
+
     def inject_deposition_map(self, deposition_map: np.ndarray):
         """Inject a deposition map from erosion simulation."""
         if deposition_map is not None:
@@ -166,6 +175,9 @@ class HeuristicEngine:
             settings = self._settings
         else:
             self._settings = settings
+
+        resolved_cellsize = self._resolve_cellsize(settings, np.asarray(heightmap).shape)
+        settings = replace(settings, cellsize=resolved_cellsize)
 
         self._apply_heightmap(heightmap, settings.z_min, settings.z_max)
         self._apply_settings(settings)
