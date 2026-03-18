@@ -1,0 +1,52 @@
+{
+  "rock_layers": [
+  {
+    "thickness": 0.012,
+    "erosion_params_path": "rock/sandstone.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/limestone.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/granite.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/gneiss.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/diorite.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/basalt.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/sandstone.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/limestone.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/granite.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/gneiss.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/diorite.json"
+  },
+  {
+    "thickness": 0.08,
+    "erosion_params_path": "rock/basalt.json"
+  }
+]
+}

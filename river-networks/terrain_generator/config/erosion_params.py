@@ -121,9 +121,15 @@ class RockLayerConfig:
     name: str = 'Layer'
     thickness: float = 0.25
     erosion_params_path: Optional[str] = None
+    source_directory: Optional[Path] = field(default=None, repr=False, compare=False)
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any]) -> 'RockLayerConfig':
+    def from_mapping(
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        base_path: Optional[Union[str, Path]] = None,
+    ) -> 'RockLayerConfig':
         name = str(payload.get('name', 'Layer'))
         thickness_value = payload.get('thickness', 0.25)
         try:
@@ -133,7 +139,13 @@ class RockLayerConfig:
         path = payload.get('erosion_params_path') or payload.get('parameters_path')
         if path is not None:
             path = str(path)
-        return cls(name=name, thickness=thickness, erosion_params_path=path)
+        source_directory = Path(base_path) if base_path is not None else None
+        return cls(
+            name=name,
+            thickness=thickness,
+            erosion_params_path=path,
+            source_directory=source_directory,
+        )
 
     def to_mapping(self) -> Dict[str, Any]:
         """Convert to a JSON-compatible mapping."""
@@ -149,15 +161,25 @@ class RockLayerConfig:
         """Load the erosion parameter set referenced by this layer, if any."""
         if not self.erosion_params_path:
             return None
-        return load_erosion_parameters(self.erosion_params_path)
+        target = Path(self.erosion_params_path).expanduser()
+        if not target.is_absolute() and self.source_directory is not None:
+            target = self.source_directory / target
+        return load_erosion_parameters(target)
 
 
-def normalize_layer_inputs(layers: Iterable[Union[RockLayerConfig, Mapping[str, Any]]]) -> list:
+def normalize_layer_inputs(
+    layers: Iterable[Union[RockLayerConfig, Mapping[str, Any]]],
+    *,
+    base_path: Optional[Union[str, Path]] = None,
+) -> list:
     """Convert arbitrary layer inputs into RockLayerConfig instances."""
     result: list = []
+    source_directory = Path(base_path) if base_path is not None else None
     for item in layers:
         if isinstance(item, RockLayerConfig):
+            if source_directory is not None and item.source_directory is None:
+                item.source_directory = source_directory
             result.append(item)
         elif isinstance(item, Mapping):
-            result.append(RockLayerConfig.from_mapping(item))
+            result.append(RockLayerConfig.from_mapping(item, base_path=source_directory))
     return result

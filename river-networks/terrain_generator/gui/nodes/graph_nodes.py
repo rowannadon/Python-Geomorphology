@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import traceback
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import matplotlib.tri as mtri
@@ -53,6 +54,38 @@ def _render_categorical_map(graph: TerrainGraphData, values: np.ndarray) -> np.n
 def _rasterize_graph_height(graph: TerrainGraphData, values: np.ndarray) -> np.ndarray:
     tri = _triangulation_to_matplotlib(graph.triangulation)
     return render_triangulation((graph.dimension, graph.dimension), tri, np.asarray(values, dtype=np.float64), triangulation=tri)
+
+
+def _coerce_layers_payload(payload: Any) -> list[Dict[str, Any]]:
+    if isinstance(payload, dict):
+        payload = payload.get("rock_layers")
+    if not isinstance(payload, list):
+        raise ValueError("Rock layer JSON must be a list or an object containing a 'rock_layers' list.")
+    return payload
+
+
+def _load_rock_layers_property(raw_value: Any) -> list[RockLayerConfig]:
+    text = str(raw_value or "").strip()
+    if not text:
+        return []
+
+    if text.startswith("[") or text.startswith("{"):
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid rock layer JSON: {exc}") from exc
+        return normalize_layer_inputs(_coerce_layers_payload(payload))
+
+    source_path = Path(text).expanduser()
+    try:
+        with source_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except OSError as exc:
+        raise ValueError(f"Failed to read rock layer JSON '{source_path}': {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid rock layer JSON file '{source_path}': {exc}") from exc
+
+    return normalize_layer_inputs(_coerce_layers_payload(payload), base_path=source_path.parent)
 
 
 class SampleTerrainGraphNode(TerrainBaseNode):
@@ -247,7 +280,17 @@ class AssignRockLayersNode(TerrainBaseNode):
         self.set_color(160, 110, 75)
         self.add_input("terrain_graph", color=(180, 120, 200))
         self.add_output("terrain_graph", color=(180, 120, 200))
-        self.add_text_input("layers_json", "Layers JSON", text="[]")
+        presets_dir = Path(__file__).resolve().parents[2] / "presets"
+        self.add_file_input(
+            "layers_json",
+            "Layers JSON",
+            text="",
+            placeholder_text="Select rock layers JSON",
+            dialog_caption="Select Rock Layers JSON",
+            file_filter="JSON Files (*.json);;All Files (*)",
+            directory=str(presets_dir),
+            tooltip="Choose a JSON file containing a 'rock_layers' array.",
+        )
         self.add_text_input("rock_warp_strength", "Warp Strength", text="0.0")
         self.add_text_input("rock_warp_scale", "FBM Scale", text="-2.0")
         self.add_text_input("rock_warp_lower", "Lower Bound", text="1.0")
@@ -257,11 +300,7 @@ class AssignRockLayersNode(TerrainBaseNode):
         graph = self.get_input_data("terrain_graph", expected_types=(PORT_TYPE_TERRAIN_GRAPH,))
         if graph.point_height is None:
             raise ValueError("Assign Rock Layers requires graph point heights.")
-        try:
-            layers_payload = json.loads(str(self.get_property("layers_json") or "[]"))
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid rock layer JSON: {exc}") from exc
-        layers = normalize_layer_inputs(layers_payload)
+        layers = _load_rock_layers_property(self.get_property("layers_json"))
         if not layers:
             layers = [RockLayerConfig(name="Default", thickness=float("inf"))]
         generator = _make_generator(

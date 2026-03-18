@@ -8,11 +8,13 @@ from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import numpy as np
 from NodeGraphQt import BaseNode
+from NodeGraphQt.constants import NodePropWidgetEnum
 from PyQt5.QtCore import QObject, pyqtSignal
 
 from ...core import ConsistentFBMNoise, gaussian_blur
 from ...io import HeightmapImporter
 from .context import get_global_context
+from .node_widgets import FilePathNodeWidget
 from .contracts import (
     HeightfieldData,
     MapOverlayData,
@@ -230,6 +232,34 @@ class TerrainBaseNode(BaseNode):
 
     def execute(self):
         raise NotImplementedError
+
+    def add_file_input(
+        self,
+        name: str,
+        label: str = "",
+        *,
+        text: str = "",
+        placeholder_text: str = "",
+        dialog_caption: str = "Select File",
+        file_filter: str = "All Files (*)",
+        directory: Optional[str] = None,
+        tooltip: Optional[str] = None,
+        tab: Optional[str] = None,
+    ):
+        """Embed a file picker widget into the node and persist its value."""
+        widget = FilePathNodeWidget(
+            self.view,
+            name,
+            label,
+            text=text,
+            placeholder_text=placeholder_text,
+            dialog_caption=dialog_caption,
+            file_filter=file_filter,
+            directory=directory,
+        )
+        if tooltip:
+            widget.setToolTip(tooltip)
+        self.add_custom_widget(widget, widget_type=NodePropWidgetEnum.FILE_OPEN.value, tab=tab)
 
 
 class ProjectSettingsNode(TerrainBaseNode):
