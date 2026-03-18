@@ -271,7 +271,18 @@ class RockStackWarpNode(TerrainBaseNode):
         shifts_field = generator._compute_rock_stack_shift((graph.dimension, graph.dimension))
         coords = generator._points_to_indices(graph.points, (graph.dimension, graph.dimension))
         shifts = shifts_field[coords[:, 0], coords[:, 1]]
-        updated = graph.with_updates(rock_stack_shifts=np.asarray(shifts, dtype=np.float32))
+        updates: Dict[str, Any] = {
+            "rock_stack_shifts": np.asarray(shifts, dtype=np.float32),
+        }
+        if graph.point_height is not None and graph.rock_layers:
+            normalized_heights = normalize(np.asarray(graph.point_height, dtype=np.float64), bounds=(0, 1))
+            assignments = generator._assign_rock_layers(
+                normalized_heights,
+                list(graph.rock_layers),
+                np.asarray(shifts, dtype=np.float32),
+            )
+            updates["rock_assignments"] = np.asarray(assignments, dtype=np.int32)
+        updated = graph.with_updates(**updates)
         self.set_output_data(updated)
         self.signals.execution_finished.emit(self)
         return updated

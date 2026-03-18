@@ -1,0 +1,550 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "project_settings",
+      "node_type": "terrain.ProjectSettingsNode",
+      "name": "Project Settings",
+      "pos": [
+        -1322.0,
+        -202.0
+      ],
+      "properties": {
+        "dimension": "2048",
+        "seed": "42",
+        "preview_mode": "Off"
+      }
+    },
+    {
+      "id": "world_settings",
+      "node_type": "terrain.WorldSettingsNode",
+      "name": "World Settings",
+      "pos": [
+        5018.204609898471,
+        -88.00327210116643
+      ],
+      "properties": {
+        "cellsize": "15",
+        "z_min": "0",
+        "z_max": "6000",
+        "sea_level_m": "15",
+        "lapse_rate_c_per_km": "4.5",
+        "t_equator_c": "30.0",
+        "t_pole_c": "0.0",
+        "coast_decay_km": "1.75",
+        "orographic_alpha": "4.0",
+        "shadow_max_distance_km": "400.0",
+        "shadow_decay_km": "150.0",
+        "shadow_height_threshold_m": "150.0",
+        "shadow_strength": "1.0",
+        "biome_mixing": "1",
+        "temperature_pattern": "polar",
+        "temperature_gradient_azimuth_deg": "0.0",
+        "precip_lat_pattern": "two_bands",
+        "precip_gradient_azimuth_deg": "0.0",
+        "prevailing_wind_model": "three_cell",
+        "constant_wind_azimuth_deg": "25.0",
+        "use_random_biomes": "False",
+        "use_simulated_flow": "True"
+      }
+    },
+    {
+      "id": "fbm_noise",
+      "node_type": "terrain.FBMNode",
+      "name": "Base Noise",
+      "pos": [
+        -978.0,
+        -231.0
+      ],
+      "properties": {
+        "scale": "-6",
+        "octaves": "6",
+        "persistence": "0.5",
+        "lacunarity": "2.0",
+        "lower": "2.0",
+        "upper": "inf",
+        "seed": "42"
+      }
+    },
+    {
+      "id": "continent_shape",
+      "node_type": "terrain.ShapeNode",
+      "name": "Continent Mask",
+      "pos": [
+        -1124.0,
+        147.0
+      ],
+      "properties": {
+        "shape_type": "Polygon",
+        "scale": "0.65",
+        "offset_x": "0.05",
+        "offset_y": "-0.03",
+        "falloff": "0.22",
+        "polygon_point_count": "8",
+        "polygon_points": "0.743:0.0528, 0.8227:0.3386, 0.673:0.5607, 0.3976:0.6779, 0.3509:0.9318, 0.1895:0.707, 0.2435:0.1896, 0.547:0.3653"
+      }
+    },
+    {
+      "id": "combine_seed",
+      "node_type": "terrain.CombineNode",
+      "name": "Mask Terrain",
+      "pos": [
+        -659.0,
+        19.0
+      ],
+      "properties": {
+        "operation": "Multiply",
+        "fade_amount": "0.5",
+        "smoothness": "5.0",
+        "divide_epsilon": "1e-5"
+      }
+    },
+    {
+      "id": "normalize_seed",
+      "node_type": "terrain.NormalizeClampNode",
+      "name": "Normalize Seed",
+      "pos": [
+        -281.0,
+        19.0
+      ],
+      "properties": {
+        "mode": "Normalize",
+        "clamp_min": "0.0",
+        "clamp_max": "1.0"
+      }
+    },
+    {
+      "id": "flood",
+      "node_type": "terrain.ThresholdFloodNode",
+      "name": "Flood Coastline",
+      "pos": [
+        70.0,
+        19.0
+      ],
+      "properties": {
+        "sea_level": "0.33"
+      }
+    },
+    {
+      "id": "sample_graph",
+      "node_type": "terrain.SampleTerrainGraphNode",
+      "name": "Sample Terrain Graph",
+      "pos": [
+        1189.0,
+        -84.0
+      ],
+      "properties": {
+        "disc_radius": "2.0",
+        "seed": "42"
+      }
+    },
+    {
+      "id": "solve_base",
+      "node_type": "terrain.SolveBaseGraphElevationNode",
+      "name": "Solve Base Elevation",
+      "pos": [
+        1423.0,
+        -338.0
+      ],
+      "properties": {
+        "max_delta": "0.05"
+      }
+    },
+    {
+      "id": "rivers",
+      "node_type": "terrain.ComputeRiverNetworkNode",
+      "name": "Compute Rivers",
+      "pos": [
+        1965.0,
+        -467.0
+      ],
+      "properties": {
+        "directional_inertia": "0.2",
+        "default_water_level": "0.8",
+        "evaporation_rate": "0.3"
+      }
+    },
+    {
+      "id": "downcut",
+      "node_type": "terrain.ApplyRiverDowncuttingNode",
+      "name": "Apply River Downcutting",
+      "pos": [
+        2605.0,
+        -49.0
+      ],
+      "properties": {
+        "river_downcutting": "1.7",
+        "max_delta": "0.05"
+      }
+    },
+    {
+      "id": "bundle",
+      "node_type": "terrain.BundleTerrainOutputsNode",
+      "name": "Bundle Terrain Outputs",
+      "pos": [
+        2946.0,
+        172.0
+      ],
+      "properties": {}
+    },
+    {
+      "id": "erosion",
+      "node_type": "terrain.ParticleErosionNode",
+      "name": "Particle Erosion",
+      "pos": [
+        3209.0,
+        -67.0
+      ],
+      "properties": {
+        "erosion_iterations": "12000",
+        "erosion_inertia": "0.3",
+        "erosion_capacity": "8.0",
+        "erosion_deposition_rate": "0.2",
+        "erosion_rate": "0.4",
+        "erosion_evaporation": "0.98",
+        "erosion_gravity": "10.0",
+        "erosion_max_lifetime": "60",
+        "erosion_step_size": "0.3",
+        "erosion_blur_iterations": "1",
+        "max_delta": "0.05"
+      }
+    },
+    {
+      "id": "03e837a411434cf2afabee98ad0ce9d8",
+      "node_type": "terrain.BiomeHeuristicNode",
+      "name": "Biome",
+      "pos": [
+        4612.726724753452,
+        -94.39030180560388
+      ],
+      "properties": {
+        "cellsize_override": "0.0"
+      }
+    },
+    {
+      "id": "e2256eedb0c440bdbf63ae2762cd50d1",
+      "node_type": "terrain.TemperatureHeuristicNode",
+      "name": "Temperature",
+      "pos": [
+        3686.0,
+        540.0
+      ],
+      "properties": {
+        "cellsize_override": "0.0"
+      }
+    },
+    {
+      "id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
+      "node_type": "terrain.PrecipitationHeuristicNode",
+      "name": "Precipitation",
+      "pos": [
+        3699.0,
+        822.0
+      ],
+      "properties": {
+        "cellsize_override": "0.0"
+      }
+    },
+    {
+      "id": "0a74bd053ba445a7a8fb884e2339550b",
+      "node_type": "terrain.PETHeuristicNode",
+      "name": "PET",
+      "pos": [
+        4285.0,
+        507.0
+      ],
+      "properties": {
+        "cellsize_override": "0.0"
+      }
+    },
+    {
+      "id": "f6bf5dd15e404afab799cf02206bbd9b",
+      "node_type": "terrain.TWIHeuristicNode",
+      "name": "TWI",
+      "pos": [
+        4097.0,
+        204.0
+      ],
+      "properties": {
+        "cellsize_override": "0.0"
+      }
+    },
+    {
+      "id": "0308242ed0c64a02977a51c542dcf27e",
+      "node_type": "terrain.FlowAccumulationHeuristicNode",
+      "name": "Flow Accumulation",
+      "pos": [
+        3642.0,
+        222.0
+      ],
+      "properties": {
+        "cellsize_override": "0.0"
+      }
+    },
+    {
+      "id": "be6f5d00368f4f34bc0d83ed651a5998",
+      "node_type": "terrain.AssignRockLayersNode",
+      "name": "Assign Rock Layers",
+      "pos": [
+        1649.0,
+        -188.0
+      ],
+      "properties": {
+        "layers_json": "rockmap.json",
+        "rock_warp_strength": "0.0",
+        "rock_warp_scale": "-2.0",
+        "rock_warp_lower": "1.0",
+        "rock_warp_upper": "inf"
+      }
+    },
+    {
+      "id": "4b1edcc28940451ca32af86d81e3de15",
+      "node_type": "terrain.ConnectInlandSeasNode",
+      "name": "Connect Inland Lakes",
+      "pos": [
+        443.0,
+        18.0
+      ],
+      "properties": {
+        "sea_level": "0.0",
+        "min_lake_size": "30",
+        "carve_depth": "0.1",
+        "fill_height": "0.01"
+      }
+    },
+    {
+      "id": "f79c8337c75747e5940d8c8dbebef820",
+      "node_type": "terrain.RockStackWarpNode",
+      "name": "Rock Stack Warp",
+      "pos": [
+        2141.0,
+        -159.0
+      ],
+      "properties": {
+        "rock_warp_strength": "0.6",
+        "rock_warp_scale": "-3",
+        "rock_warp_lower": "1.0",
+        "rock_warp_upper": "inf"
+      }
+    },
+    {
+      "id": "264f912e5d1d47efb9ca33b2f345c57c",
+      "node_type": "terrain.RockLayerOverlayNode",
+      "name": "Rock Layer Overlay",
+      "pos": [
+        3041.0,
+        -454.0
+      ],
+      "properties": {}
+    },
+    {
+      "id": "8270965b0baa4a02b3b91cf7b1ef3aae",
+      "node_type": "terrain.TPIHeuristicNode",
+      "name": "TPI",
+      "pos": [
+        4202.0,
+        709.0
+      ],
+      "properties": {
+        "cellsize_override": "0.0",
+        "radius_m": "100"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "source_node_id": "fbm_noise",
+      "source_port": "heightfield",
+      "target_node_id": "combine_seed",
+      "target_port": "heightfield_a"
+    },
+    {
+      "source_node_id": "continent_shape",
+      "source_port": "heightfield",
+      "target_node_id": "combine_seed",
+      "target_port": "heightfield_b"
+    },
+    {
+      "source_node_id": "combine_seed",
+      "source_port": "heightfield",
+      "target_node_id": "normalize_seed",
+      "target_port": "heightfield"
+    },
+    {
+      "source_node_id": "normalize_seed",
+      "source_port": "heightfield",
+      "target_node_id": "flood",
+      "target_port": "heightfield"
+    },
+    {
+      "source_node_id": "flood",
+      "source_port": "heightfield",
+      "target_node_id": "4b1edcc28940451ca32af86d81e3de15",
+      "target_port": "heightfield"
+    },
+    {
+      "source_node_id": "flood",
+      "source_port": "land_mask",
+      "target_node_id": "4b1edcc28940451ca32af86d81e3de15",
+      "target_port": "land_mask"
+    },
+    {
+      "source_node_id": "sample_graph",
+      "source_port": "terrain_graph",
+      "target_node_id": "solve_base",
+      "target_port": "terrain_graph"
+    },
+    {
+      "source_node_id": "solve_base",
+      "source_port": "terrain_graph",
+      "target_node_id": "rivers",
+      "target_port": "terrain_graph"
+    },
+    {
+      "source_node_id": "solve_base",
+      "source_port": "terrain_graph",
+      "target_node_id": "be6f5d00368f4f34bc0d83ed651a5998",
+      "target_port": "terrain_graph"
+    },
+    {
+      "source_node_id": "rivers",
+      "source_port": "river_network",
+      "target_node_id": "downcut",
+      "target_port": "river_network"
+    },
+    {
+      "source_node_id": "rivers",
+      "source_port": "river_network",
+      "target_node_id": "bundle",
+      "target_port": "river_network"
+    },
+    {
+      "source_node_id": "downcut",
+      "source_port": "terrain_graph",
+      "target_node_id": "bundle",
+      "target_port": "terrain_graph"
+    },
+    {
+      "source_node_id": "downcut",
+      "source_port": "terrain_graph",
+      "target_node_id": "264f912e5d1d47efb9ca33b2f345c57c",
+      "target_port": "terrain_graph"
+    },
+    {
+      "source_node_id": "bundle",
+      "source_port": "terrain_bundle",
+      "target_node_id": "erosion",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "0308242ed0c64a02977a51c542dcf27e",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "0a74bd053ba445a7a8fb884e2339550b",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "8270965b0baa4a02b3b91cf7b1ef3aae",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
+      "source_port": "map_overlay",
+      "target_node_id": "0a74bd053ba445a7a8fb884e2339550b",
+      "target_port": "temperature"
+    },
+    {
+      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
+      "source_port": "map_overlay",
+      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
+      "target_port": "temperature"
+    },
+    {
+      "source_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
+      "source_port": "map_overlay",
+      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
+      "target_port": "precipitation"
+    },
+    {
+      "source_node_id": "0a74bd053ba445a7a8fb884e2339550b",
+      "source_port": "map_overlay",
+      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
+      "target_port": "pet"
+    },
+    {
+      "source_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
+      "source_port": "map_overlay",
+      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
+      "target_port": "twi"
+    },
+    {
+      "source_node_id": "0308242ed0c64a02977a51c542dcf27e",
+      "source_port": "map_overlay",
+      "target_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
+      "target_port": "flowacc"
+    },
+    {
+      "source_node_id": "be6f5d00368f4f34bc0d83ed651a5998",
+      "source_port": "terrain_graph",
+      "target_node_id": "f79c8337c75747e5940d8c8dbebef820",
+      "target_port": "terrain_graph"
+    },
+    {
+      "source_node_id": "4b1edcc28940451ca32af86d81e3de15",
+      "source_port": "heightfield",
+      "target_node_id": "sample_graph",
+      "target_port": "heightfield"
+    },
+    {
+      "source_node_id": "4b1edcc28940451ca32af86d81e3de15",
+      "source_port": "land_mask",
+      "target_node_id": "sample_graph",
+      "target_port": "land_mask"
+    },
+    {
+      "source_node_id": "4b1edcc28940451ca32af86d81e3de15",
+      "source_port": "land_mask",
+      "target_node_id": "bundle",
+      "target_port": "land_mask"
+    },
+    {
+      "source_node_id": "f79c8337c75747e5940d8c8dbebef820",
+      "source_port": "terrain_graph",
+      "target_node_id": "downcut",
+      "target_port": "terrain_graph"
+    }
+  ],
+  "pinned_node_id": "erosion",
+  "metadata": {}
+}
