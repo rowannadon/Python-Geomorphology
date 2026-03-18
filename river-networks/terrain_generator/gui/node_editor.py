@@ -505,7 +505,12 @@ class NodeEditorWidget(QWidget):
             node.mark_dirty()
             self._update_node_visual_state(node)
         if self.auto_update_enabled and self.pinned_node is not None:
-            if self._is_upstream_of(node, self.pinned_node) or node == self.pinned_node:
+            if (
+                node == self.project_settings_node
+                or node == self.world_settings_node
+                or self._is_upstream_of(node, self.pinned_node)
+                or node == self.pinned_node
+            ):
                 self._schedule_auto_update()
 
     def _schedule_auto_update(self):
