@@ -14,6 +14,7 @@ from NodeGraphQt.constants import NodePropWidgetEnum
 from PyQt5.QtCore import QObject, pyqtSignal
 
 from ...core import ConsistentFBMNoise, gaussian_blur
+from ...core.utils import connect_inland_seas
 from ...io import HeightmapImporter
 from ..curves_widget import DEFAULT_LINEAR_CURVE, apply_curve_points, parse_curve_points
 from .context import get_global_context
@@ -811,6 +812,56 @@ class GaussianBlurNode(TerrainBaseNode):
         self.set_output_data(payload)
         self.signals.execution_finished.emit(self)
         return payload
+
+
+class ConnectInlandSeasNode(TerrainBaseNode):
+    """Apply legacy inland-lake removal and sea-level channel cutting."""
+
+    NODE_NAME = "Connect Inland Lakes"
+    INPUT_TYPES = {
+        "heightfield": (PORT_TYPE_HEIGHTFIELD,),
+        "land_mask": (PORT_TYPE_MASK,),
+    }
+    OUTPUT_TYPES = {
+        "heightfield": (PORT_TYPE_HEIGHTFIELD,),
+        "land_mask": (PORT_TYPE_MASK,),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(85, 130, 130)
+        self.add_input("heightfield", color=(150, 200, 150))
+        self.add_input("land_mask", color=(120, 180, 120))
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_output("land_mask", color=(120, 180, 120))
+        self.add_text_input("sea_level", "Sea Level", text="0.0")
+        self.add_text_input("min_lake_size", "Min Lake Size", text="30")
+        self.add_text_input("carve_depth", "Carve Depth", text="0.1")
+        self.add_text_input("fill_height", "Fill Height", text="0.01")
+
+    def execute(self):
+        source = self.get_input_heightfield("heightfield")
+        land_mask_input = self.get_input_mask("land_mask", required=False)
+        sea_level = _parse_float(self.get_property("sea_level"), 0.0)
+        if land_mask_input is None:
+            land_mask_array = np.asarray(source.array > sea_level, dtype=bool)
+            land_mask_name = f"{self._base_name} Mask"
+        else:
+            land_mask_array = np.asarray(land_mask_input.array, dtype=bool)
+            land_mask_name = land_mask_input.name
+        adjusted_height, adjusted_land = connect_inland_seas(
+            source.array,
+            land_mask_array,
+            min_sea_size=max(_parse_int(self.get_property("min_lake_size"), 30), 1),
+            carve_depth=max(_parse_float(self.get_property("carve_depth"), 0.1), 0.0),
+            fill_height=max(_parse_float(self.get_property("fill_height"), 0.01), 0.0),
+            water_level=sea_level,
+        )
+        payload = source.with_array(np.asarray(adjusted_height, dtype=np.float32), name=self._base_name)
+        mask = MaskData(array=np.asarray(adjusted_land, dtype=bool), name=land_mask_name)
+        self.set_output_data({"heightfield": payload, "land_mask": mask})
+        self.signals.execution_finished.emit(self)
+        return self._cached_output
 
 
 class InvertNode(TerrainBaseNode):

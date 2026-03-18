@@ -375,7 +375,10 @@ def carve_channel_to_ocean(heightmap: np.ndarray, land_mask: np.ndarray,
 
 
 def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
-                       min_sea_size: int = 20) -> Tuple[np.ndarray, np.ndarray]:
+                       min_sea_size: int = 20,
+                       carve_depth: float = 0.1,
+                       fill_height: float = 0.01,
+                       water_level: float = 0.0) -> Tuple[np.ndarray, np.ndarray]:
     """
     Connect all inland seas to the ocean or fill them if too small.
     
@@ -383,6 +386,9 @@ def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
         heightmap: Terrain heightmap  
         land_mask: Boolean mask where True = land
         min_sea_size: Minimum size for inland seas (smaller ones are filled)
+        carve_depth: Channel depth relative to water level
+        fill_height: Height assigned to filled lakes above water level
+        water_level: Absolute sea level used by the raster
         
     Returns:
         Modified heightmap and land mask
@@ -393,7 +399,9 @@ def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
         # No inland seas found
         return heightmap, land_mask
     
-    modified_heightmap = heightmap.copy()
+    dtype = np.asarray(heightmap).dtype
+    relative_heightmap = np.asarray(heightmap, dtype=np.float32) - float(water_level)
+    modified_heightmap = relative_heightmap.copy()
     
     print(f"Found {len(inland_seas)} inland water bodies")
     
@@ -404,13 +412,13 @@ def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
             # Fill small lakes
             print(f"  Filling small lake {i+1} (size: {sea_size})")
             # Set to slightly above water level
-            modified_heightmap[sea_mask] = 0.01  
+            modified_heightmap[sea_mask] = float(fill_height)
         else:
             # Carve channel for larger seas
             print(f"  Carving channel for inland sea {i+1} (size: {sea_size})")
             modified_heightmap = carve_channel_to_ocean(
                 modified_heightmap, land_mask, sea_mask, ocean_mask,
-                carve_depth=0.1  # Make carving more aggressive
+                carve_depth=float(carve_depth)
             )
     
     # Recompute land mask after modifications
@@ -418,7 +426,12 @@ def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
     new_land_mask = modified_heightmap > 0.001
     
     # Ensure carved channels are properly marked as water
-    modified_heightmap = np.where(new_land_mask, modified_heightmap, 0)
+    modified_heightmap = np.where(new_land_mask, modified_heightmap, 0.0)
+    modified_heightmap = np.where(
+        new_land_mask,
+        modified_heightmap + float(water_level),
+        float(water_level),
+    ).astype(dtype, copy=False)
     
     return modified_heightmap, new_land_mask
 

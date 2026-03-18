@@ -28,6 +28,7 @@ from .custom_node_view import CustomNodeItem
 from .execution_widgets import NodeExecutionLabel, NodeProgressBar
 from .base_nodes import (
     CombineNode,
+    ConnectInlandSeasNode,
     ConstantNode,
     CurveRemapNode,
     DomainWarpNode,
@@ -129,6 +130,7 @@ __all__ = [
     "ImportHeightmapNode",
     "ShapeNode",
     "CombineNode",
+    "ConnectInlandSeasNode",
     "DomainWarpNode",
     "CurveRemapNode",
     "ThresholdFloodNode",
