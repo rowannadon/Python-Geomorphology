@@ -92,14 +92,9 @@ class HeuristicMapNode(TerrainBaseNode):
         self.add_text_input("cellsize_override", "Cell Size Override (m)", text=str(self.SPEC.default_cellsize))
         if self.SPEC.uses_tpi_radius:
             self.add_text_input("radius_m", "Radius (m)", text="25.0")
-        if self.SPEC.uses_temperature_settings:
-            self.add_combo_menu("temperature_pattern", "Temperature Pattern", items=["polar", "equatorial", "gradient"])
-            self.set_property("temperature_pattern", "polar")
-        if self.SPEC.uses_precipitation_settings:
-            self.add_combo_menu("precip_lat_pattern", "Precipitation Pattern", items=["two_bands", "single_band", "uniform", "gradient"])
-            self.set_property("precip_lat_pattern", "two_bands")
-            self.add_combo_menu("prevailing_wind_model", "Wind Model", items=["three_cell", "constant"])
-            self.set_property("prevailing_wind_model", "three_cell")
+        if self.SPEC.selection_key == "svf":
+            self.add_text_input("svf_dirs", "SVF Directions", text="16")
+            self.add_text_input("svf_radius", "SVF Radius (m)", text="100.0")
 
     def _resolve_sources(self) -> Tuple[HeightfieldData, Optional[TerrainBundleData]]:
         bundle = self.get_input_data("terrain_bundle", required=False, expected_types=(PORT_TYPE_TERRAIN_BUNDLE,))
@@ -113,21 +108,12 @@ class HeuristicMapNode(TerrainBaseNode):
     def _build_settings(self, dependency_overlays: Optional[Dict[str, MapOverlayData]] = None) -> Dict[str, Any]:
         world_settings = HeuristicSettings().__dict__.copy()
         world_settings.update(self.context.get_world_settings())
-        if dependency_overlays:
-            for overlay in dependency_overlays.values():
-                source_settings = overlay.metadata.get("source_settings")
-                if isinstance(source_settings, dict):
-                    for key in ("temperature_pattern", "precip_lat_pattern", "prevailing_wind_model"):
-                        if key in source_settings:
-                            world_settings[key] = source_settings[key]
         cellsize_override = _parse_float(self.get_property("cellsize_override"), 0.0)
         if cellsize_override > 0.0:
             world_settings["cellsize"] = cellsize_override
-        if self.SPEC.uses_temperature_settings:
-            world_settings["temperature_pattern"] = self.get_property("temperature_pattern") or world_settings["temperature_pattern"]
-        if self.SPEC.uses_precipitation_settings:
-            world_settings["precip_lat_pattern"] = self.get_property("precip_lat_pattern") or world_settings["precip_lat_pattern"]
-            world_settings["prevailing_wind_model"] = self.get_property("prevailing_wind_model") or world_settings["prevailing_wind_model"]
+        if self.SPEC.selection_key == "svf":
+            world_settings["svf_dirs"] = max(1, _parse_int(self.get_property("svf_dirs"), 16))
+            world_settings["svf_radius"] = _parse_float(self.get_property("svf_radius"), 100.0)
         world_settings.pop("use_simulated_flow", None)
         return world_settings
 

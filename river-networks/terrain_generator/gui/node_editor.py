@@ -12,6 +12,7 @@ import numpy as np
 from NodeGraphQt import NodeGraph
 from NodeGraphQt.constants import PipeLayoutEnum
 from NodeGraphQt.widgets.viewer import NodeViewer
+from PIL import Image
 from PyQt5.QtCore import QEvent, QThread, QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QContextMenuEvent
 from PyQt5.QtWidgets import (
@@ -30,6 +31,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
 )
 
+from ..io import TerrainExporter
 from ..visualization import TerrainViewport
 from .nodes import (
     AETHeuristicNode,
@@ -56,7 +58,6 @@ from .nodes import (
     GaussianBlurNode,
     GroundcoverDensityHeuristicNode,
     HeightfieldData,
-    HeuristicMapNode,
     ImportHeightmapNode,
     InvertNode,
     LandMaskNode,
@@ -246,8 +247,6 @@ class NodeEditorWidget(QWidget):
         super().__init__(parent)
         self.node_graph = None
         self.node_viewport = None
-        self.main_terrain_viewport = None
-        self.main_window = None
         self.project_settings_node = None
         self.world_settings_node = None
         self.pinned_node = None
@@ -341,6 +340,10 @@ class NodeEditorWidget(QWidget):
         self.load_graph_btn = QPushButton("Load Graph")
         self.load_graph_btn.clicked.connect(self.load_graph_from_file)
         toolbar_layout.addWidget(self.load_graph_btn)
+
+        self.export_btn = QPushButton("Export Output")
+        self.export_btn.clicked.connect(self.export_pinned_output)
+        toolbar_layout.addWidget(self.export_btn)
 
         toolbar_layout.addStretch()
 
@@ -450,9 +453,13 @@ class NodeEditorWidget(QWidget):
             node._persist_id = uuid.uuid4().hex
         self._setup_node_execution(node)
         if properties:
+            allowed_properties = None
             if isinstance(node, TerrainBaseNode):
                 properties = node.restore_serialized_properties(properties, base_path=base_path)
+                allowed_properties = set(node.serializable_properties().keys())
             for key, value in properties.items():
+                if allowed_properties is not None and key not in allowed_properties:
+                    continue
                 try:
                     node.set_property(key, value)
                 except Exception:
@@ -709,17 +716,11 @@ class NodeEditorWidget(QWidget):
             terrain = terrain_data_from_heightfield(payload)
             self.node_viewport.clear_overlay_image()
             self.node_viewport.set_overlay_visible(False)
-            if self.main_terrain_viewport is not None:
-                self.main_terrain_viewport.clear_overlay_image()
-                self.main_terrain_viewport.set_overlay_visible(False)
             self._set_terrain_on_viewports(terrain)
         elif isinstance(payload, TerrainBundleData):
             terrain = terrain_data_from_bundle(payload)
             self.node_viewport.clear_overlay_image()
             self.node_viewport.set_overlay_visible(False)
-            if self.main_terrain_viewport is not None:
-                self.main_terrain_viewport.clear_overlay_image()
-                self.main_terrain_viewport.set_overlay_visible(False)
             self._set_terrain_on_viewports(terrain)
         elif isinstance(payload, MapOverlayData):
             preview_bundle = payload.metadata.get("preview_bundle")
@@ -730,9 +731,6 @@ class NodeEditorWidget(QWidget):
             self._set_terrain_on_viewports(terrain)
             self.node_viewport.set_overlay_image(payload.rgba)
             self.node_viewport.set_overlay_visible(True)
-            if self.main_terrain_viewport is not None:
-                self.main_terrain_viewport.set_overlay_image(payload.rgba)
-                self.main_terrain_viewport.set_overlay_visible(True)
         elif isinstance(payload, SettingsData):
             self.status_bar.setText(f"{node_name}: settings node executed")
             QMessageBox.information(
@@ -754,8 +752,6 @@ class NodeEditorWidget(QWidget):
 
     def _set_terrain_on_viewports(self, terrain):
         self.node_viewport.set_terrain(terrain)
-        if self.main_terrain_viewport is not None:
-            self.main_terrain_viewport.set_terrain(terrain)
 
     def _clear_all_caches(self):
         if not self.node_graph:
@@ -813,45 +809,10 @@ class NodeEditorWidget(QWidget):
         pinned_id = node_ids.get(self.pinned_node) if self.pinned_node is not None else None
         return build_graph_payload(nodes=nodes_payload, connections=connections, pinned_node_id=pinned_id)
 
-    @staticmethod
-    def _migrate_legacy_heuristic_properties(
-        node_cls: Type[TerrainBaseNode],
-        properties: Optional[Dict[str, object]],
-        world_settings_properties: Dict[str, object],
-    ) -> Dict[str, object]:
-        migrated = dict(properties or {})
-        if not issubclass(node_cls, HeuristicMapNode):
-            return migrated
-
-        spec = getattr(node_cls, "SPEC", None)
-        if spec is None:
-            return migrated
-
-        if getattr(spec, "uses_temperature_settings", False) and "temperature_pattern" not in migrated:
-            if "temperature_pattern" in world_settings_properties:
-                migrated["temperature_pattern"] = world_settings_properties["temperature_pattern"]
-
-        if getattr(spec, "uses_precipitation_settings", False):
-            if "precip_lat_pattern" not in migrated and "precip_lat_pattern" in world_settings_properties:
-                migrated["precip_lat_pattern"] = world_settings_properties["precip_lat_pattern"]
-            if "prevailing_wind_model" not in migrated and "prevailing_wind_model" in world_settings_properties:
-                migrated["prevailing_wind_model"] = world_settings_properties["prevailing_wind_model"]
-
-        return migrated
-
     def _apply_graph_payload(self, payload: Dict[str, object], *, base_path=None):
         nodes_data = payload.get("nodes", []) or []
         connections = payload.get("connections", []) or []
         pinned_id = payload.get("pinned_node_id")
-        world_settings_type = self.create_type_lookup.get("WorldSettingsNode")
-        world_settings_properties: Dict[str, object] = {}
-        for entry in nodes_data:
-            if entry.get("node_type") != world_settings_type:
-                continue
-            candidate = entry.get("properties", {})
-            if isinstance(candidate, dict):
-                world_settings_properties = dict(candidate)
-            break
         self.clear_graph(skip_confirmation=True, recreate_globals=False)
         created = {}
         for entry in nodes_data:
@@ -860,15 +821,11 @@ class NodeEditorWidget(QWidget):
             if node_cls is None:
                 continue
             properties = entry.get("properties", {})
-            if isinstance(properties, dict):
-                properties = self._migrate_legacy_heuristic_properties(node_cls, properties, world_settings_properties)
-            else:
-                properties = self._migrate_legacy_heuristic_properties(node_cls, None, world_settings_properties)
             node = self._create_node_instance(
                 node_cls,
                 name=entry.get("name"),
                 pos=tuple(entry.get("pos", [0, 0])),
-                properties=properties,
+                properties=properties if isinstance(properties, dict) else None,
                 base_path=base_path,
             )
             node._persist_id = entry.get("id", uuid.uuid4().hex)
@@ -957,11 +914,85 @@ class NodeEditorWidget(QWidget):
             self.create_global_nodes()
         self._update_status_bar()
 
-    def set_main_terrain_viewport(self, viewport):
-        self.main_terrain_viewport = viewport
+    def _current_visual_payload(self):
+        if self.pinned_node is None or not isinstance(self.pinned_node, TerrainBaseNode):
+            return None
+        return self.pinned_node.get_visualization_payload()
 
-    def set_main_window(self, main_window):
-        self.main_window = main_window
+    @staticmethod
+    def _save_overlay_to_path(overlay_array: np.ndarray, filename: str):
+        array = np.asarray(overlay_array)
+        if array.ndim == 2:
+            mode = "L"
+        elif array.ndim == 3 and array.shape[2] == 3:
+            mode = "RGB"
+        elif array.ndim == 3 and array.shape[2] == 4:
+            mode = "RGBA"
+        else:
+            raise ValueError("Unsupported overlay format for export.")
+        Image.fromarray(array.astype(np.uint8), mode=mode).save(filename)
+
+    def export_pinned_output(self):
+        payload = self._current_visual_payload()
+        if payload is None:
+            QMessageBox.information(self, "Export Output", "Pin and execute a node before exporting.")
+            return
+
+        node_name = self.pinned_node._base_name if self.pinned_node is not None else "output"
+        safe_name = node_name.lower().replace(" ", "_")
+
+        if isinstance(payload, HeightfieldData):
+            self._export_heightfield(payload.array, default_stem=safe_name)
+            return
+
+        if isinstance(payload, TerrainBundleData):
+            self._export_heightfield(payload.heightfield.array, default_stem=safe_name)
+            return
+
+        if isinstance(payload, MapOverlayData):
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Overlay",
+                f"{safe_name}.png",
+                "PNG Files (*.png);;TIFF Files (*.tiff *.tif)",
+            )
+            if not filename:
+                return
+            try:
+                self._save_overlay_to_path(payload.rgba, filename)
+            except Exception as exc:
+                QMessageBox.critical(self, "Export Failed", str(exc))
+                return
+            QMessageBox.information(self, "Export Successful", f"Saved overlay to {filename}")
+            return
+
+        QMessageBox.information(
+            self,
+            "Export Unavailable",
+            f"'{type(payload).__name__}' does not have an export path yet.",
+        )
+
+    def _export_heightfield(self, array: np.ndarray, *, default_stem: str):
+        filename, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export Heightmap",
+            f"{default_stem}.png",
+            "PNG (8-bit) (*.png);;PNG (16-bit) (*.png);;TIFF (32-bit float) (*.tiff *.tif)",
+        )
+        if not filename:
+            return
+        format_map = {
+            "PNG (8-bit) (*.png)": "PNG_8",
+            "PNG (16-bit) (*.png)": "PNG_16",
+            "TIFF (32-bit float) (*.tiff *.tif)": "TIFF_32",
+        }
+        export_format = format_map.get(selected_filter, "PNG_8")
+        try:
+            TerrainExporter.export_heightmap(np.asarray(array, dtype=np.float32), filename, export_format)
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Failed", str(exc))
+            return
+        QMessageBox.information(self, "Export Successful", f"Saved heightmap to {filename}")
 
     def eventFilter(self, obj, event):
         if self.node_graph and obj in (self.node_graph.widget, self.node_graph.viewer(), self.node_graph.viewer().viewport()):

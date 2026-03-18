@@ -383,6 +383,25 @@ class WorldSettingsNode(TerrainBaseNode):
         self.add_text_input("z_min", "Elevation Min", text="0")
         self.add_text_input("z_max", "Elevation Max", text="6000")
         self.add_text_input("sea_level_m", "Sea Level (m)", text="0")
+        self.add_text_input("lapse_rate_c_per_km", "Temp Lapse Rate (C/km)", text="6.5")
+        self.add_text_input("t_equator_c", "Temp @ Equator (C)", text="30.0")
+        self.add_text_input("t_pole_c", "Temp @ Poles (C)", text="0.0")
+        self.add_text_input("coast_decay_km", "Coast Decay (km)", text="1.75")
+        self.add_text_input("orographic_alpha", "Orographic Alpha", text="4.0")
+        self.add_text_input("shadow_max_distance_km", "Shadow Max Distance (km)", text="400.0")
+        self.add_text_input("shadow_decay_km", "Shadow Decay (km)", text="150.0")
+        self.add_text_input("shadow_height_threshold_m", "Shadow Height Threshold (m)", text="150.0")
+        self.add_text_input("shadow_strength", "Shadow Strength", text="1.0")
+        self.add_text_input("biome_mixing", "Biome Mixing Radius", text="1")
+        self.add_combo_menu("temperature_pattern", "Temperature Pattern", items=["polar", "equatorial", "gradient"])
+        self.set_property("temperature_pattern", "polar")
+        self.add_text_input("temperature_gradient_azimuth_deg", "Temp Gradient Azimuth (deg)", text="0.0")
+        self.add_combo_menu("precip_lat_pattern", "Precipitation Pattern", items=["two_bands", "single_band", "uniform", "gradient"])
+        self.set_property("precip_lat_pattern", "two_bands")
+        self.add_text_input("precip_gradient_azimuth_deg", "Precip Gradient Azimuth (deg)", text="0.0")
+        self.add_combo_menu("prevailing_wind_model", "Wind Model", items=["three_cell", "constant"])
+        self.set_property("prevailing_wind_model", "three_cell")
+        self.add_text_input("constant_wind_azimuth_deg", "Constant Wind Azimuth (deg)", text="25.0")
         self.add_combo_menu("use_random_biomes", "Random Biomes", items=["False", "True"])
         self.set_property("use_random_biomes", "False")
         self.add_combo_menu("use_simulated_flow", "Use Sim Flow", items=["True", "False"])
@@ -395,6 +414,22 @@ class WorldSettingsNode(TerrainBaseNode):
             "z_min": _parse_float(self.get_property("z_min"), 0.0),
             "z_max": _parse_float(self.get_property("z_max"), 6000.0),
             "sea_level_m": _parse_float(self.get_property("sea_level_m"), 0.0),
+            "lapse_rate_c_per_km": _parse_float(self.get_property("lapse_rate_c_per_km"), 6.5),
+            "t_equator_c": _parse_float(self.get_property("t_equator_c"), 30.0),
+            "t_pole_c": _parse_float(self.get_property("t_pole_c"), 0.0),
+            "coast_decay_km": _parse_float(self.get_property("coast_decay_km"), 1.75),
+            "orographic_alpha": _parse_float(self.get_property("orographic_alpha"), 4.0),
+            "shadow_max_distance_km": _parse_float(self.get_property("shadow_max_distance_km"), 400.0),
+            "shadow_decay_km": _parse_float(self.get_property("shadow_decay_km"), 150.0),
+            "shadow_height_threshold_m": _parse_float(self.get_property("shadow_height_threshold_m"), 150.0),
+            "shadow_strength": _parse_float(self.get_property("shadow_strength"), 1.0),
+            "biome_mixing": max(0, _parse_int(self.get_property("biome_mixing"), 1)),
+            "temperature_pattern": str(self.get_property("temperature_pattern") or "polar"),
+            "temperature_gradient_azimuth_deg": _parse_float(self.get_property("temperature_gradient_azimuth_deg"), 0.0),
+            "precip_lat_pattern": str(self.get_property("precip_lat_pattern") or "two_bands"),
+            "precip_gradient_azimuth_deg": _parse_float(self.get_property("precip_gradient_azimuth_deg"), 0.0),
+            "prevailing_wind_model": str(self.get_property("prevailing_wind_model") or "three_cell"),
+            "constant_wind_azimuth_deg": _parse_float(self.get_property("constant_wind_azimuth_deg"), 25.0),
             "use_random_biomes": (self.get_property("use_random_biomes") == "True"),
             "use_simulated_flow": (self.get_property("use_simulated_flow") == "True"),
         }
