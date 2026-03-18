@@ -18,7 +18,14 @@ from ...core.utils import connect_inland_seas
 from ...io import HeightmapImporter
 from ..curves_widget import DEFAULT_LINEAR_CURVE, apply_curve_points, parse_curve_points
 from .context import get_global_context
-from .node_widgets import CurveEditorNodeWidget, FilePathNodeWidget
+from .node_widgets import (
+    CurveEditorNodeWidget,
+    FilePathNodeWidget,
+    PolygonEditorNodeWidget,
+    parse_polygon_points,
+    regular_polygon_points,
+    serialize_polygon_points,
+)
 from .contracts import (
     HeightfieldData,
     MapOverlayData,
@@ -560,12 +567,96 @@ class ShapeNode(TerrainBaseNode):
         self.set_color(180, 120, 90)
         self.add_output("heightfield", color=(150, 200, 150))
         self.add_output("mask", color=(120, 180, 120))
-        self.add_combo_menu("shape_type", "Shape", items=["Circle", "Square", "Triangle", "Rounded Square"])
+        self.add_combo_menu("shape_type", "Shape", items=["Circle", "Square", "Triangle", "Rounded Square", "Polygon"])
         self.set_property("shape_type", "Circle")
         self.add_text_input("scale", "Scale", text="1.0")
         self.add_text_input("offset_x", "Offset X", text="0.0")
         self.add_text_input("offset_y", "Offset Y", text="0.0")
         self.add_text_input("falloff", "Falloff", text="0.1")
+        self.add_text_input("polygon_point_count", "Polygon Points", text="5")
+        self._polygon_widget = PolygonEditorNodeWidget(
+            self.view,
+            "polygon_points",
+            "Polygon",
+            value=serialize_polygon_points(regular_polygon_points(5)),
+            point_count=5,
+        )
+        self.add_custom_widget(self._polygon_widget)
+        self._update_polygon_editor_state()
+
+    @staticmethod
+    def _polygon_vertices(
+        raw_points: Any,
+        *,
+        point_count: int,
+        scale: float,
+        offset_x: float,
+        offset_y: float,
+    ) -> np.ndarray:
+        points = parse_polygon_points(
+            str(raw_points or ""),
+            regular_polygon_points(point_count),
+            point_count=max(3, int(point_count)),
+        )
+        vertices = np.asarray(points, dtype=np.float32)
+        vertices[:, 0] = ((vertices[:, 0] * 2.0) - 1.0) * scale + offset_x
+        vertices[:, 1] = ((vertices[:, 1] * 2.0) - 1.0) * scale + offset_y
+        return vertices
+
+    @staticmethod
+    def _polygon_signed_distance(x: np.ndarray, y: np.ndarray, vertices: np.ndarray) -> np.ndarray:
+        if vertices.shape[0] < 3:
+            raise ValueError("Polygon masks require at least 3 vertices.")
+        inside = np.zeros(x.shape, dtype=bool)
+        min_dist_sq = np.full(x.shape, np.inf, dtype=np.float32)
+        for idx in range(vertices.shape[0]):
+            x1, y1 = float(vertices[idx, 0]), float(vertices[idx, 1])
+            x2, y2 = float(vertices[(idx + 1) % vertices.shape[0], 0]), float(vertices[(idx + 1) % vertices.shape[0], 1])
+
+            dy = y2 - y1
+            if abs(dy) > 1e-8:
+                x_intersection = ((x2 - x1) * (y - y1) / dy) + x1
+                inside ^= ((y1 > y) != (y2 > y)) & (x < x_intersection)
+
+            edge_x = x2 - x1
+            edge_y = y2 - y1
+            edge_len_sq = edge_x * edge_x + edge_y * edge_y
+            if edge_len_sq <= 1e-12:
+                dist_sq = (x - x1) ** 2 + (y - y1) ** 2
+            else:
+                t = np.clip(((x - x1) * edge_x + (y - y1) * edge_y) / edge_len_sq, 0.0, 1.0)
+                proj_x = x1 + t * edge_x
+                proj_y = y1 + t * edge_y
+                dist_sq = (x - proj_x) ** 2 + (y - proj_y) ** 2
+            min_dist_sq = np.minimum(min_dist_sq, dist_sq.astype(np.float32, copy=False))
+        distance = np.sqrt(min_dist_sq).astype(np.float32, copy=False)
+        return np.where(inside, -distance, distance)
+
+    def _update_polygon_editor_state(self):
+        enabled = str(self.get_property("shape_type") or "").strip().lower() == "polygon"
+        if hasattr(self, "_polygon_widget"):
+            self._polygon_widget.widget().setEnabled(enabled)
+
+    def set_property(self, name: str, value: Any, **kwargs):  # type: ignore[override]
+        result = super().set_property(name, value, **kwargs)
+        if name == "shape_type":
+            self._update_polygon_editor_state()
+        elif name == "polygon_point_count" and hasattr(self, "_polygon_widget"):
+            self._polygon_widget.set_point_count(max(_parse_int(value, 5), 3))
+        return result
+
+    def restore_serialized_properties(
+        self,
+        properties: Optional[Dict[str, Any]],
+        *,
+        base_path: Optional[Path] = None,
+    ) -> Dict[str, Any]:
+        restored = super().restore_serialized_properties(properties, base_path=base_path)
+        polygon_points = restored.get("polygon_points")
+        if polygon_points is not None:
+            parsed_points = parse_polygon_points(str(polygon_points or ""), regular_polygon_points(5))
+            restored["polygon_point_count"] = str(max(3, len(parsed_points)))
+        return restored
 
     def execute(self):
         dim = self.context.get_resolution()
@@ -579,6 +670,7 @@ class ShapeNode(TerrainBaseNode):
             np.linspace(-1.0, 1.0, dim),
             indexing="ij",
         )
+        signed_distance = None
         x = x - offset_x
         y = y - offset_y
         if shape_type == "circle":
@@ -597,9 +689,22 @@ class ShapeNode(TerrainBaseNode):
             p = 4.0
             dist = (np.abs(x) ** p + np.abs(y) ** p) ** (1.0 / p)
             radius = scale
+        elif shape_type == "polygon":
+            point_count = max(_parse_int(self.get_property("polygon_point_count"), 5), 3)
+            vertices = self._polygon_vertices(
+                self.get_property("polygon_points"),
+                point_count=point_count,
+                scale=scale,
+                offset_x=offset_x,
+                offset_y=offset_y,
+            )
+            signed_distance = self._polygon_signed_distance(x + offset_x, y + offset_y, vertices)
         else:
             raise ValueError(f"Unknown shape '{shape_type}'.")
-        edge_dist = np.clip((dist - radius) / falloff, 0.0, 1.0)
+        if signed_distance is None:
+            edge_dist = np.clip((dist - radius) / falloff, 0.0, 1.0)
+        else:
+            edge_dist = np.clip(signed_distance / falloff, 0.0, 1.0)
         mask_arr = 1.0 - (3.0 * edge_dist**2 - 2.0 * edge_dist**3)
         heightfield = HeightfieldData(array=mask_arr.astype(np.float32), name=self._base_name)
         mask = MaskData(array=mask_arr >= 0.5, name=f"{self._base_name} Mask")
