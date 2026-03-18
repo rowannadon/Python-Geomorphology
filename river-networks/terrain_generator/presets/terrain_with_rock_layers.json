@@ -299,7 +299,7 @@
         -244.1961278945422
       ],
       "properties": {
-        "layers_json": "/Users/rowan/Python-Geomorphology/river-networks/terrain_generator/presets/rockmap.json",
+        "layers_json": "rockmap.json",
         "rock_warp_strength": "0.0",
         "rock_warp_scale": "-2.0",
         "rock_warp_lower": "1.0",
@@ -484,7 +484,5 @@
     }
   ],
   "pinned_node_id": "erosion",
-  "metadata": {
-    "cwd": "/Users/rowan/Python-Geomorphology"
-  }
+  "metadata": {}
 }

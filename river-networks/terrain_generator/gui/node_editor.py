@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from pathlib import Path
 from typing import Dict, Optional, Tuple, Type
 
 import numpy as np
@@ -430,7 +431,15 @@ class NodeEditorWidget(QWidget):
         self.project_settings_node = self._create_node_instance(ProjectSettingsNode, pos=(-520, -140))
         self.world_settings_node = self._create_node_instance(WorldSettingsNode, pos=(-520, 160))
 
-    def _create_node_instance(self, node_cls: Type[TerrainBaseNode], *, name: Optional[str] = None, pos: Tuple[int, int] = (0, 0), properties: Optional[Dict[str, object]] = None):
+    def _create_node_instance(
+        self,
+        node_cls: Type[TerrainBaseNode],
+        *,
+        name: Optional[str] = None,
+        pos: Tuple[int, int] = (0, 0),
+        properties: Optional[Dict[str, object]] = None,
+        base_path: Optional[Path] = None,
+    ):
         node_type = self.create_type_lookup[node_cls.__name__]
         node = self.node_graph.create_node(node_type, name=name or getattr(node_cls, "NODE_NAME", node_cls.__name__), pos=[int(pos[0]), int(pos[1])])
         node._node_type_name = node_type
@@ -438,6 +447,8 @@ class NodeEditorWidget(QWidget):
             node._persist_id = uuid.uuid4().hex
         self._setup_node_execution(node)
         if properties:
+            if isinstance(node, TerrainBaseNode):
+                properties = node.restore_serialized_properties(properties, base_path=base_path)
             for key, value in properties.items():
                 try:
                     node.set_property(key, value)
@@ -755,7 +766,7 @@ class NodeEditorWidget(QWidget):
             self.project_settings_node.context.clear_runtime_caches()
         QMessageBox.information(self, "Cache Cleared", "Cleared all node caches.")
 
-    def _serialize_graph(self) -> Dict[str, object]:
+    def _serialize_graph(self, *, base_path=None) -> Dict[str, object]:
         nodes_payload = []
         connections = []
         node_ids: Dict[object, str] = {}
@@ -770,7 +781,7 @@ class NodeEditorWidget(QWidget):
                     "node_type": getattr(node, "_node_type_name", self.create_type_lookup.get(node.__class__.__name__, "")),
                     "name": node.name(),
                     "pos": list(pos_value) if pos_value is not None else [0, 0],
-                    "properties": node.serializable_properties() if isinstance(node, TerrainBaseNode) else {},
+                    "properties": node.serializable_properties(base_path=base_path) if isinstance(node, TerrainBaseNode) else {},
                 }
             )
         for node in self.node_graph.all_nodes():
@@ -797,7 +808,7 @@ class NodeEditorWidget(QWidget):
                         }
                     )
         pinned_id = node_ids.get(self.pinned_node) if self.pinned_node is not None else None
-        return build_graph_payload(nodes=nodes_payload, connections=connections, pinned_node_id=pinned_id, metadata={"cwd": os.getcwd()})
+        return build_graph_payload(nodes=nodes_payload, connections=connections, pinned_node_id=pinned_id)
 
     @staticmethod
     def _migrate_legacy_heuristic_properties(
@@ -825,7 +836,7 @@ class NodeEditorWidget(QWidget):
 
         return migrated
 
-    def _apply_graph_payload(self, payload: Dict[str, object]):
+    def _apply_graph_payload(self, payload: Dict[str, object], *, base_path=None):
         nodes_data = payload.get("nodes", []) or []
         connections = payload.get("connections", []) or []
         pinned_id = payload.get("pinned_node_id")
@@ -855,6 +866,7 @@ class NodeEditorWidget(QWidget):
                 name=entry.get("name"),
                 pos=tuple(entry.get("pos", [0, 0])),
                 properties=properties,
+                base_path=base_path,
             )
             node._persist_id = entry.get("id", uuid.uuid4().hex)
             created[node._persist_id] = node
@@ -886,7 +898,7 @@ class NodeEditorWidget(QWidget):
         filename, _ = QFileDialog.getSaveFileName(self, "Save Node Graph", "", "Node Graph (*.terrain_graph.json *.json);;All Files (*)")
         if not filename:
             return
-        payload = self._serialize_graph()
+        payload = self._serialize_graph(base_path=Path(filename).resolve().parent)
         saved = save_graph_payload(filename, payload)
         self.status_bar.setText(f"Saved graph: {saved.name}")
 
@@ -895,7 +907,7 @@ class NodeEditorWidget(QWidget):
         if not filename:
             return
         payload = load_graph_payload(filename)
-        self._apply_graph_payload(payload)
+        self._apply_graph_payload(payload, base_path=Path(filename).resolve().parent)
         self.status_bar.setText(f"Loaded graph: {os.path.basename(filename)}")
 
     def _on_nodes_deleted(self, nodes):

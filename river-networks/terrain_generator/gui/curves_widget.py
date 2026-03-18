@@ -1,11 +1,98 @@
 """Height adjustment curves widget."""
 
+import json
+from typing import Any, List, Optional, Sequence, Tuple
+
 import numpy as np
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
-from PyQt5.QtCore import Qt, QPointF, QRectF, pyqtSignal
-from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPainterPath
-from scipy.interpolate import CubicSpline, interp1d
-from typing import List, Tuple, Optional
+from PyQt5.QtCore import QPointF, QRectF, Qt, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
+from PyQt5.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from scipy.interpolate import PchipInterpolator, interp1d
+
+
+DEFAULT_LINEAR_CURVE = [(0.0, 0.0), (1.0, 1.0)]
+
+
+def parse_curve_points(
+    raw_value: Any,
+    fallback: Optional[Sequence[Tuple[float, float]]] = None,
+    *,
+    clamp_output: bool = False,
+) -> List[Tuple[float, float]]:
+    """Parse curve points from text or pair-like values."""
+    fallback_points = list(fallback or DEFAULT_LINEAR_CURVE)
+    parsed: List[Tuple[float, float]] = []
+
+    if isinstance(raw_value, str):
+        text = raw_value.strip()
+        if not text:
+            return fallback_points
+        if text.startswith("["):
+            try:
+                raw_value = json.loads(text)
+            except json.JSONDecodeError:
+                raw_value = text
+        if isinstance(raw_value, str):
+            for chunk in raw_value.split(","):
+                item = chunk.strip()
+                if ":" not in item:
+                    continue
+                left, right = item.split(":", 1)
+                try:
+                    parsed.append((float(left), float(right)))
+                except ValueError:
+                    continue
+    if not parsed and isinstance(raw_value, (list, tuple)):
+        for pair in raw_value:
+            if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+                continue
+            try:
+                parsed.append((float(pair[0]), float(pair[1])))
+            except (TypeError, ValueError):
+                continue
+
+    if not parsed:
+        return fallback_points
+
+    sanitized: List[Tuple[float, float]] = []
+    for x, y in sorted(parsed, key=lambda item: item[0]):
+        x_val = float(np.clip(x, 0.0, 1.0))
+        y_val = float(np.clip(y, 0.0, 1.0)) if clamp_output else float(y)
+        if sanitized and abs(sanitized[-1][0] - x_val) < 1e-6:
+            sanitized[-1] = (x_val, y_val)
+        else:
+            sanitized.append((x_val, y_val))
+
+    return sanitized if len(sanitized) >= 2 else fallback_points
+
+
+def serialize_curve_points(points: Sequence[Tuple[float, float]]) -> str:
+    """Serialize control points to the node's persisted text format."""
+    return ", ".join(f"{float(x):.4f}:{float(y):.4f}" for x, y in points)
+
+
+def apply_curve_points(values: np.ndarray, points: Any) -> np.ndarray:
+    """Evaluate a smooth curve against normalized input values."""
+    curve_points = parse_curve_points(points, DEFAULT_LINEAR_CURVE)
+    x_coords = np.asarray([point[0] for point in curve_points], dtype=np.float64)
+    y_coords = np.asarray([point[1] for point in curve_points], dtype=np.float64)
+    sample_points = np.clip(np.asarray(values, dtype=np.float64), 0.0, 1.0)
+
+    if len(curve_points) >= 3:
+        try:
+            interpolator = PchipInterpolator(x_coords, y_coords, extrapolate=True)
+            return np.asarray(interpolator(sample_points), dtype=np.float64)
+        except ValueError:
+            pass
+
+    linear = interp1d(
+        x_coords,
+        y_coords,
+        kind="linear",
+        bounds_error=False,
+        fill_value=(y_coords[0], y_coords[-1]),
+    )
+    return np.asarray(linear(sample_points), dtype=np.float64)
 
 class CurvesGraphWidget(QWidget):
     """Interactive curves adjustment graph."""
@@ -44,14 +131,16 @@ class CurvesGraphWidget(QWidget):
     
     def reset_curve(self):
         """Reset to linear curve."""
-        self.control_points = [(0.0, 0.0), (1.0, 1.0)]
+        self.control_points = list(DEFAULT_LINEAR_CURVE)
         self.selected_point = None
         self.update()
         self.curveChanged.emit(self.control_points)
     
     def set_control_points(self, points: List[Tuple[float, float]]):
         """Set control points from external source."""
-        self.control_points = sorted(points, key=lambda p: p[0])
+        self.control_points = parse_curve_points(points, DEFAULT_LINEAR_CURVE, clamp_output=True)
+        self.selected_point = None
+        self.hover_point = None
         self.update()
     
     def get_control_points(self) -> List[Tuple[float, float]]:
@@ -61,29 +150,8 @@ class CurvesGraphWidget(QWidget):
     def apply_curve(self, values: np.ndarray) -> np.ndarray:
         """Apply the curve transformation to input values."""
         if len(self.control_points) < 2:
-            return values
-        
-        # Sort points by x coordinate
-        sorted_points = sorted(self.control_points, key=lambda p: p[0])
-        x_coords = [p[0] for p in sorted_points]
-        y_coords = [p[1] for p in sorted_points]
-        
-        # Use cubic spline interpolation if we have enough points
-        if len(sorted_points) >= 4:
-            try:
-                spline = CubicSpline(x_coords, y_coords, bc_type='clamped')
-                result = spline(np.clip(values, 0, 1))
-            except:
-                # Fallback to linear interpolation
-                interp = interp1d(x_coords, y_coords, kind='linear', 
-                                bounds_error=False, fill_value=(y_coords[0], y_coords[-1]))
-                result = interp(np.clip(values, 0, 1))
-        else:
-            # Use linear interpolation for fewer points
-            interp = interp1d(x_coords, y_coords, kind='linear',
-                            bounds_error=False, fill_value=(y_coords[0], y_coords[-1]))
-            result = interp(np.clip(values, 0, 1))
-        
+            return np.asarray(values, dtype=np.float64)
+        result = apply_curve_points(values, self.control_points)
         return np.clip(result, 0, 1)
     
     def paintEvent(self, event):
@@ -463,16 +531,7 @@ class HeightCurvesWidget(QWidget):
         """Set control points from an iterable of pairs."""
         if not points:
             return
-        sanitized = []
-        for pair in points:
-            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
-                continue
-            try:
-                sanitized.append((float(pair[0]), float(pair[1])))
-            except (TypeError, ValueError):
-                continue
-        if not sanitized:
-            return
+        sanitized = parse_curve_points(points, self.default_curve or DEFAULT_LINEAR_CURVE, clamp_output=True)
         self.curves_graph.set_control_points(sanitized)
         self.curvesChanged.emit()
     

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import math
+import os
 import traceback
+from pathlib import Path, PureWindowsPath
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import numpy as np
@@ -13,8 +15,9 @@ from PyQt5.QtCore import QObject, pyqtSignal
 
 from ...core import ConsistentFBMNoise, gaussian_blur
 from ...io import HeightmapImporter
+from ..curves_widget import DEFAULT_LINEAR_CURVE, apply_curve_points, parse_curve_points
 from .context import get_global_context
-from .node_widgets import FilePathNodeWidget
+from .node_widgets import CurveEditorNodeWidget, FilePathNodeWidget
 from .contracts import (
     HeightfieldData,
     MapOverlayData,
@@ -93,6 +96,7 @@ class TerrainBaseNode(BaseNode):
         self._last_error = None
         self._base_name = getattr(self, "NODE_NAME", self.__class__.__name__)
         self._serializable_properties: list[str] = []
+        self._path_properties: set[str] = set()
         self.set_name(self._base_name)
         self.set_color(80, 80, 120)
 
@@ -111,8 +115,69 @@ class TerrainBaseNode(BaseNode):
             self.mark_dirty()
         return result
 
-    def serializable_properties(self) -> Dict[str, Any]:
-        return {name: self.get_property(name) for name in self._serializable_properties}
+    @staticmethod
+    def _is_inline_json_text(value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        stripped = value.strip()
+        return stripped.startswith("{") or stripped.startswith("[")
+
+    @staticmethod
+    def _is_absolute_path_text(value: str) -> bool:
+        return Path(value).expanduser().is_absolute() or PureWindowsPath(value).is_absolute()
+
+    @staticmethod
+    def _relativize_path_text(value: str, *, base_path: Path) -> str:
+        stripped = value.strip()
+        if not stripped:
+            return value
+        if not TerrainBaseNode._is_absolute_path_text(stripped):
+            return Path(stripped).as_posix()
+        try:
+            relative = os.path.relpath(stripped, os.fspath(base_path))
+        except ValueError:
+            return stripped
+        return Path(relative).as_posix()
+
+    @staticmethod
+    def _resolve_path_text(value: str, *, base_path: Path) -> str:
+        stripped = value.strip()
+        if not stripped or TerrainBaseNode._is_absolute_path_text(stripped):
+            return stripped
+        return str((base_path / Path(stripped)).resolve(strict=False))
+
+    def register_path_property(self, name: str):
+        if name and not name.startswith("_"):
+            self._path_properties.add(name)
+
+    def serializable_properties(self, *, base_path: Optional[Path] = None) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        for name in self._serializable_properties:
+            value = self.get_property(name)
+            if (
+                base_path is not None
+                and name in self._path_properties
+                and isinstance(value, str)
+                and not self._is_inline_json_text(value)
+            ):
+                value = self._relativize_path_text(value, base_path=base_path)
+            result[name] = value
+        return result
+
+    def restore_serialized_properties(
+        self,
+        properties: Optional[Dict[str, Any]],
+        *,
+        base_path: Optional[Path] = None,
+    ) -> Dict[str, Any]:
+        restored = dict(properties or {})
+        if base_path is None:
+            return restored
+        for name in self._path_properties:
+            value = restored.get(name)
+            if isinstance(value, str) and not self._is_inline_json_text(value):
+                restored[name] = self._resolve_path_text(value, base_path=base_path)
+        return restored
 
     def emit_progress(self, progress: float, message: str):
         self.signals.progress_updated.emit(self, max(0.0, min(1.0, float(progress))), str(message))
@@ -247,6 +312,7 @@ class TerrainBaseNode(BaseNode):
         tab: Optional[str] = None,
     ):
         """Embed a file picker widget into the node and persist its value."""
+        self.register_path_property(name)
         widget = FilePathNodeWidget(
             self.view,
             name,
@@ -424,6 +490,7 @@ class ImportHeightmapNode(TerrainBaseNode):
         self.add_output("heightfield", color=(150, 200, 150))
         self.add_output("land_mask", color=(120, 180, 120))
         self.add_text_input("file_path", "File Path", text="")
+        self.register_path_property("file_path")
 
     def execute(self):
         file_path = str(self.get_property("file_path") or "").strip()
@@ -666,20 +733,24 @@ class CurveRemapNode(TerrainBaseNode):
         self.set_color(160, 120, 70)
         self.add_input("heightfield", color=(150, 200, 150))
         self.add_output("heightfield", color=(150, 200, 150))
-        self.add_text_input("control_points", "Control Points", text="0.0:0.0, 1.0:1.0")
+        curve_widget = CurveEditorNodeWidget(
+            self.view,
+            "control_points",
+            "Curve",
+            value="0.0:0.0, 1.0:1.0",
+        )
+        self.add_custom_widget(curve_widget)
 
     def execute(self):
         source = self.get_input_heightfield("heightfield")
-        points = sorted(_parse_points_text(str(self.get_property("control_points") or ""), [(0.0, 0.0), (1.0, 1.0)]))
-        x = np.array([item[0] for item in points], dtype=np.float32)
-        y = np.array([item[1] for item in points], dtype=np.float32)
+        points = parse_curve_points(self.get_property("control_points"), DEFAULT_LINEAR_CURVE)
         input_arr = source.array.astype(np.float32)
         normalized = input_arr
         source_min = float(input_arr.min())
         source_max = float(input_arr.max())
         if source_max > source_min:
             normalized = (input_arr - source_min) / (source_max - source_min)
-        remapped = np.interp(np.clip(normalized, 0.0, 1.0), x, y).astype(np.float32)
+        remapped = apply_curve_points(normalized, points).astype(np.float32)
         payload = source.with_array(remapped, name=self._base_name)
         self.set_output_data(payload)
         self.signals.execution_finished.emit(self)
