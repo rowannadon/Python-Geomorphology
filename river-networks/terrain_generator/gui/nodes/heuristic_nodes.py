@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from ...heuristics import HeuristicEngine, HeuristicSettings, qimage_to_rgba
-from .base_nodes import TerrainBaseNode, _parse_float, _parse_int
+from .base_nodes import TerrainBaseNode, _parse_float
 from .contracts import (
     HeightfieldData,
     MapOverlayData,
@@ -39,6 +39,16 @@ class HeuristicSpec:
     supports_flow_override: bool = False
     uses_temperature_settings: bool = False
     uses_precipitation_settings: bool = False
+    dependencies: Tuple["HeuristicDependency", ...] = ()
+
+
+@dataclass(frozen=True)
+class HeuristicDependency:
+    """A required overlay input used to seed downstream heuristic computation."""
+
+    port_name: str
+    cache_key: str
+    accepted_array_keys: Tuple[str, ...]
 
 
 def _selection_for_spec(spec: HeuristicSpec, radius_m: float) -> str:
@@ -76,6 +86,8 @@ class HeuristicMapNode(TerrainBaseNode):
         self.add_input("flow_override", color=(140, 180, 220))
         self.add_input("deposition_map", color=(150, 200, 150))
         self.add_input("rock_map", color=(150, 200, 150))
+        for dependency in self.SPEC.dependencies:
+            self.add_input(dependency.port_name, color=(180, 180, 120))
         self.add_output("map_overlay", color=(180, 180, 120))
         self.add_text_input("cellsize_override", "Cell Size Override (m)", text=str(self.SPEC.default_cellsize))
         if self.SPEC.uses_tpi_radius:
@@ -98,9 +110,16 @@ class HeuristicMapNode(TerrainBaseNode):
             return heightfield, None
         raise ValueError(f"{self._base_name} requires either a terrain bundle or heightfield input.")
 
-    def _build_settings(self) -> Dict[str, Any]:
+    def _build_settings(self, dependency_overlays: Optional[Dict[str, MapOverlayData]] = None) -> Dict[str, Any]:
         world_settings = HeuristicSettings().__dict__.copy()
         world_settings.update(self.context.get_world_settings())
+        if dependency_overlays:
+            for overlay in dependency_overlays.values():
+                source_settings = overlay.metadata.get("source_settings")
+                if isinstance(source_settings, dict):
+                    for key in ("temperature_pattern", "precip_lat_pattern", "prevailing_wind_model"):
+                        if key in source_settings:
+                            world_settings[key] = source_settings[key]
         cellsize_override = _parse_float(self.get_property("cellsize_override"), 0.0)
         if cellsize_override > 0.0:
             world_settings["cellsize"] = cellsize_override
@@ -111,6 +130,47 @@ class HeuristicMapNode(TerrainBaseNode):
             world_settings["prevailing_wind_model"] = self.get_property("prevailing_wind_model") or world_settings["prevailing_wind_model"]
         world_settings.pop("use_simulated_flow", None)
         return world_settings
+
+    @staticmethod
+    def _overlay_array_key(overlay: MapOverlayData) -> str:
+        metadata_key = overlay.metadata.get("array_key")
+        if metadata_key:
+            return str(metadata_key)
+        return str(overlay.key)
+
+    def _resolve_dependency_overlays(self, heightfield: HeightfieldData) -> Dict[str, MapOverlayData]:
+        overlays: Dict[str, MapOverlayData] = {}
+        for dependency in self.SPEC.dependencies:
+            overlay = self.get_input_overlay(dependency.port_name, required=True)
+            if overlay is None:
+                continue
+            array_key = self._overlay_array_key(overlay)
+            if dependency.accepted_array_keys and array_key not in dependency.accepted_array_keys:
+                accepted = ", ".join(dependency.accepted_array_keys)
+                raise ValueError(
+                    f"{self._base_name} input '{dependency.port_name}' expects one of [{accepted}], received '{array_key}'."
+                )
+            if overlay.base_heightfield.shape != heightfield.shape:
+                raise ValueError(
+                    f"{self._base_name} input '{dependency.port_name}' shape {overlay.base_heightfield.shape} "
+                    f"does not match terrain shape {heightfield.shape}."
+                )
+            overlays[dependency.port_name] = overlay
+        return overlays
+
+    def _seed_engine_from_dependencies(
+        self,
+        engine: HeuristicEngine,
+        dependency_overlays: Dict[str, MapOverlayData],
+    ):
+        for dependency in self.SPEC.dependencies:
+            overlay = dependency_overlays.get(dependency.port_name)
+            if overlay is None:
+                continue
+            array = np.asarray(overlay.array, dtype=np.float32)
+            engine.qt_engine.cache[dependency.cache_key] = array.copy()
+            if dependency.cache_key == "acc":
+                engine.qt_engine.params["flowacc_texture"] = None
 
     def _resolve_optional_maps(
         self,
@@ -150,6 +210,7 @@ class HeuristicMapNode(TerrainBaseNode):
         selection_key: str,
         heightfield: HeightfieldData,
         settings: Dict[str, Any],
+        dependency_overlays: Dict[str, MapOverlayData],
         flow_override: Optional[np.ndarray],
         deposition_map: Optional[np.ndarray],
         rock_map: Optional[np.ndarray],
@@ -160,6 +221,11 @@ class HeuristicMapNode(TerrainBaseNode):
             repr(sorted(settings.items())),
             payload_identity_hash(heightfield),
         ]
+        for dependency in self.SPEC.dependencies:
+            overlay = dependency_overlays.get(dependency.port_name)
+            extras.append(
+                "none" if overlay is None else f"{dependency.port_name}:{payload_identity_hash(overlay)}"
+            )
         for arr in (flow_override, deposition_map, rock_map):
             if arr is None:
                 extras.append("none")
@@ -173,11 +239,12 @@ class HeuristicMapNode(TerrainBaseNode):
     def _compute_overlay(self) -> MapOverlayData:
         spec = self.current_spec()
         heightfield, bundle = self._resolve_sources()
-        settings = self._build_settings()
+        dependency_overlays = self._resolve_dependency_overlays(heightfield)
+        settings = self._build_settings(dependency_overlays)
         radius_m = _parse_float(self.get_property("radius_m"), 25.0) if spec.uses_tpi_radius else 0.0
         selection_key = _selection_for_spec(spec, radius_m)
         flow_override, deposition_map, rock_map, rock_types, rock_colors = self._resolve_optional_maps(bundle)
-        cache_key = self._cache_key(spec, selection_key, heightfield, settings, flow_override, deposition_map, rock_map)
+        cache_key = self._cache_key(spec, selection_key, heightfield, settings, dependency_overlays, flow_override, deposition_map, rock_map)
         if cache_key in self.context.heuristic_cache:
             return self.context.heuristic_cache[cache_key]
 
@@ -185,6 +252,7 @@ class HeuristicMapNode(TerrainBaseNode):
         engine_settings = HeuristicSettings(**settings)
         self.emit_progress(0.15, f"Preparing {spec.node_name}")
         engine.prepare(heightfield.array, engine_settings)
+        self._seed_engine_from_dependencies(engine, dependency_overlays)
         if flow_override is not None:
             engine.qt_engine.cache["acc"] = np.asarray(flow_override, dtype=np.float32).copy()
             engine.qt_engine.params["flowacc_texture"] = None
@@ -213,7 +281,11 @@ class HeuristicMapNode(TerrainBaseNode):
             rgba=rgba,
             base_heightfield=overlay.base_heightfield,
             overlay_kind=overlay.overlay_kind,
-            metadata={"selection_key": selection_key, "array_key": spec.array_key},
+            metadata={
+                "selection_key": selection_key,
+                "array_key": spec.array_key,
+                "source_settings": dict(settings),
+            },
         )
         self.context.heuristic_cache[cache_key] = overlay
         return overlay
@@ -226,6 +298,19 @@ class HeuristicMapNode(TerrainBaseNode):
         return overlay
 
 
+_FLOWACC_DEPENDENCY = HeuristicDependency("flowacc", "acc", ("flowacc",))
+_TEMPERATURE_DEPENDENCY = HeuristicDependency("temperature", "temp_c", ("temp_c",))
+_PRECIPITATION_DEPENDENCY = HeuristicDependency("precipitation", "P_mm", ("precip_mm",))
+_PET_DEPENDENCY = HeuristicDependency("pet", "PET", ("PET",))
+_TWI_DEPENDENCY = HeuristicDependency("twi", "twi", ("twi",))
+_CLIMATE_STACK_DEPENDENCIES = (
+    _TEMPERATURE_DEPENDENCY,
+    _PRECIPITATION_DEPENDENCY,
+    _PET_DEPENDENCY,
+    _TWI_DEPENDENCY,
+)
+
+
 _HEURISTIC_SPECS: Dict[str, HeuristicSpec] = {
     "SlopeHeuristicNode": HeuristicSpec("Slope", "slope", "slope_deg", "slope_deg"),
     "AspectHeuristicNode": HeuristicSpec("Aspect", "aspect", "aspect_deg", "aspect_deg"),
@@ -233,19 +318,19 @@ _HEURISTIC_SPECS: Dict[str, HeuristicSpec] = {
     "CurvatureHeuristicNode": HeuristicSpec("Curvature", "curvature", "curvature", "curvature"),
     "TPIHeuristicNode": HeuristicSpec("TPI", "tpi", "tpi_25m", "tpi_25m", uses_tpi_radius=True),
     "FlowAccumulationHeuristicNode": HeuristicSpec("Flow Accumulation", "flowacc", "flowacc", "flowacc_log", supports_flow_override=True),
-    "TWIHeuristicNode": HeuristicSpec("TWI", "twi", "twi", "twi"),
+    "TWIHeuristicNode": HeuristicSpec("TWI", "twi", "twi", "twi", dependencies=(_FLOWACC_DEPENDENCY,)),
     "SVFHeuristicNode": HeuristicSpec("Sky View Factor", "svf", "svf", "svf"),
     "TemperatureHeuristicNode": HeuristicSpec("Temperature", "climate", "temp_c", "temp_c", uses_temperature_settings=True),
     "PrecipitationHeuristicNode": HeuristicSpec("Precipitation", "climate", "precip_mm", "precip_mm", uses_precipitation_settings=True),
-    "PETHeuristicNode": HeuristicSpec("PET", "climate", "PET", "PET", uses_temperature_settings=True),
-    "AETHeuristicNode": HeuristicSpec("AET", "climate", "AET", "AET", uses_temperature_settings=True, uses_precipitation_settings=True),
-    "AridityHeuristicNode": HeuristicSpec("Aridity", "climate", "AI", "AI", uses_temperature_settings=True, uses_precipitation_settings=True),
-    "BiomeHeuristicNode": HeuristicSpec("Biome", "biome", "biome_rgb", "biome_map", overlay_kind="rgb", uses_temperature_settings=True, uses_precipitation_settings=True),
-    "AlbedoHeuristicNode": HeuristicSpec("Albedo", "albedo", "albedo_rgb", "terrain_albedo", overlay_kind="rgb", needs_deposition=True, needs_rock_map=True, uses_temperature_settings=True, uses_precipitation_settings=True),
-    "ContinuousAlbedoHeuristicNode": HeuristicSpec("Continuous Albedo", "albedo_continuous", "albedo_continuous_rgb", "terrain_albedo_continuous", overlay_kind="rgb", uses_temperature_settings=True, uses_precipitation_settings=True),
-    "FoliageColorHeuristicNode": HeuristicSpec("Foliage Color", "foliage", "foliage_rgb", "foliage_color", overlay_kind="rgb", uses_temperature_settings=True, uses_precipitation_settings=True),
-    "ForestDensityHeuristicNode": HeuristicSpec("Forest Density", "forest_density", "forest_density", "forest_density", uses_temperature_settings=True, uses_precipitation_settings=True),
-    "GroundcoverDensityHeuristicNode": HeuristicSpec("Groundcover Density", "groundcover_density", "groundcover_density", "groundcover_density", uses_temperature_settings=True, uses_precipitation_settings=True),
+    "PETHeuristicNode": HeuristicSpec("PET", "climate", "PET", "PET", dependencies=(_TEMPERATURE_DEPENDENCY,)),
+    "AETHeuristicNode": HeuristicSpec("AET", "climate", "AET", "AET", dependencies=(_PRECIPITATION_DEPENDENCY, _PET_DEPENDENCY)),
+    "AridityHeuristicNode": HeuristicSpec("Aridity", "climate", "AI", "AI", dependencies=(_PRECIPITATION_DEPENDENCY, _PET_DEPENDENCY)),
+    "BiomeHeuristicNode": HeuristicSpec("Biome", "biome", "biome_rgb", "biome_map", overlay_kind="rgb", dependencies=_CLIMATE_STACK_DEPENDENCIES),
+    "AlbedoHeuristicNode": HeuristicSpec("Albedo", "albedo", "albedo_rgb", "terrain_albedo", overlay_kind="rgb", needs_deposition=True, needs_rock_map=True, dependencies=_CLIMATE_STACK_DEPENDENCIES),
+    "ContinuousAlbedoHeuristicNode": HeuristicSpec("Continuous Albedo", "albedo_continuous", "albedo_continuous_rgb", "terrain_albedo_continuous", overlay_kind="rgb", dependencies=_CLIMATE_STACK_DEPENDENCIES),
+    "FoliageColorHeuristicNode": HeuristicSpec("Foliage Color", "foliage", "foliage_rgb", "foliage_color", overlay_kind="rgb", dependencies=_CLIMATE_STACK_DEPENDENCIES),
+    "ForestDensityHeuristicNode": HeuristicSpec("Forest Density", "forest_density", "forest_density", "forest_density", dependencies=_CLIMATE_STACK_DEPENDENCIES),
+    "GroundcoverDensityHeuristicNode": HeuristicSpec("Groundcover Density", "groundcover_density", "groundcover_density", "groundcover_density", dependencies=_CLIMATE_STACK_DEPENDENCIES),
 }
 
 
@@ -257,8 +342,8 @@ def _build_heuristic_node_class(class_name: str, spec: HeuristicSpec):
         def __init__(self):
             super().__init__()
 
-        def _build_settings(self) -> Dict[str, Any]:
-            settings = super()._build_settings()
+        def _build_settings(self, dependency_overlays: Optional[Dict[str, MapOverlayData]] = None) -> Dict[str, Any]:
+            settings = super()._build_settings(dependency_overlays)
             if spec.uses_tpi_radius:
                 radius = _parse_float(self.get_property("radius_m"), 25.0)
                 settings["tpi_radii"] = (radius,)
@@ -275,6 +360,12 @@ def _build_heuristic_node_class(class_name: str, spec: HeuristicSpec):
                     overlay_kind=spec.overlay_kind,
                     default_cellsize=spec.default_cellsize,
                     uses_tpi_radius=True,
+                    needs_deposition=spec.needs_deposition,
+                    needs_rock_map=spec.needs_rock_map,
+                    supports_flow_override=spec.supports_flow_override,
+                    uses_temperature_settings=spec.uses_temperature_settings,
+                    uses_precipitation_settings=spec.uses_precipitation_settings,
+                    dependencies=spec.dependencies,
                 )
             return spec
 

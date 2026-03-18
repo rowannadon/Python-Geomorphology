@@ -153,8 +153,6 @@ class TerraceMaxDeltaNode(TerrainBaseNode):
         self.set_color(150, 100, 160)
         self.add_input("terrain_graph", color=(180, 120, 200))
         self.add_output("terrain_graph", color=(180, 120, 200))
-        self.add_combo_menu("enabled_terraces", "Use Terraces", items=["False", "True"])
-        self.set_property("enabled_terraces", "True")
         self.add_combo_menu("enabled_curve", "Use Curve", items=["False", "True"])
         self.set_property("enabled_curve", "False")
         self.add_text_input("base_max_delta", "Base Max Delta", text="0.05")
@@ -178,7 +176,7 @@ class TerraceMaxDeltaNode(TerrainBaseNode):
         generator = _make_generator(
             dimension=graph.dimension,
             max_delta=_parse_float(self.get_property("base_max_delta"), 0.05),
-            use_variable_max_delta=(self.get_property("enabled_terraces") == "True"),
+            use_variable_max_delta=True,
             terrace_count=_parse_int(self.get_property("terrace_count"), 3),
             terrace_thickness=_parse_float(self.get_property("terrace_thickness"), 0.5),
             terrace_flat_delta=_parse_float(self.get_property("terrace_flat_delta"), 0.01),

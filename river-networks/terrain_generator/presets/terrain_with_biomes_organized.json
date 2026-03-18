@@ -5,7 +5,10 @@
       "id": "project_settings",
       "node_type": "terrain.ProjectSettingsNode",
       "name": "Project Settings",
-      "pos": [-620, -180],
+      "pos": [
+        -1322.6301745077672,
+        -202.42436727152446
+      ],
       "properties": {
         "dimension": "512",
         "seed": "42",
@@ -16,12 +19,15 @@
       "id": "world_settings",
       "node_type": "terrain.WorldSettingsNode",
       "name": "World Settings",
-      "pos": [-620, 120],
+      "pos": [
+        -1322.6301745077672,
+        97.57563272847551
+      ],
       "properties": {
-        "cellsize": "1500",
+        "cellsize": "15",
         "z_min": "0",
-        "z_max": "6000",
-        "sea_level_m": "0",
+        "z_max": "12000",
+        "sea_level_m": "15",
         "use_random_biomes": "False",
         "use_simulated_flow": "True"
       }
@@ -30,9 +36,12 @@
       "id": "fbm_noise",
       "node_type": "terrain.FBMNode",
       "name": "Base Noise",
-      "pos": [-300, -140],
+      "pos": [
+        -978.3371099636156,
+        -231.5661663587249
+      ],
       "properties": {
-        "scale": "-4.2",
+        "scale": "-5",
         "octaves": "6",
         "persistence": "0.5",
         "lacunarity": "2.0",
@@ -45,10 +54,13 @@
       "id": "continent_shape",
       "node_type": "terrain.ShapeNode",
       "name": "Continent Mask",
-      "pos": [-300, 60],
+      "pos": [
+        -995.1553854172589,
+        147.8287718134709
+      ],
       "properties": {
         "shape_type": "Circle",
-        "scale": "0.9",
+        "scale": "0.65",
         "offset_x": "0.05",
         "offset_y": "-0.03",
         "falloff": "0.22"
@@ -58,7 +70,10 @@
       "id": "combine_seed",
       "node_type": "terrain.CombineNode",
       "name": "Mask Terrain",
-      "pos": [-10, -40],
+      "pos": [
+        -659.7850044989076,
+        19.6679011302397
+      ],
       "properties": {
         "operation": "Multiply",
         "fade_amount": "0.5",
@@ -70,7 +85,10 @@
       "id": "normalize_seed",
       "node_type": "terrain.NormalizeClampNode",
       "name": "Normalize Seed",
-      "pos": [230, -40],
+      "pos": [
+        -281.5014063245067,
+        19.798312724065283
+      ],
       "properties": {
         "mode": "Normalize",
         "clamp_min": "0.0",
@@ -81,7 +99,10 @@
       "id": "flood",
       "node_type": "terrain.ThresholdFloodNode",
       "name": "Flood Coastline",
-      "pos": [500, -40],
+      "pos": [
+        70.19962729578083,
+        19.798312724065287
+      ],
       "properties": {
         "sea_level": "0.33"
       }
@@ -90,7 +111,10 @@
       "id": "blur",
       "node_type": "terrain.GaussianBlurNode",
       "name": "Soften Beaches",
-      "pos": [760, -40],
+      "pos": [
+        418.50630716717563,
+        19.928724317890882
+      ],
       "properties": {
         "sigma": "1.2"
       }
@@ -99,7 +123,10 @@
       "id": "land_mask",
       "node_type": "terrain.LandMaskNode",
       "name": "Land Mask",
-      "pos": [760, 150],
+      "pos": [
+        805.3313260889813,
+        196.55126115723098
+      ],
       "properties": {
         "sea_level": "0.001"
       }
@@ -108,7 +135,10 @@
       "id": "sample_graph",
       "node_type": "terrain.SampleTerrainGraphNode",
       "name": "Sample Terrain Graph",
-      "pos": [1040, -120],
+      "pos": [
+        1189.2263542768924,
+        -84.7022795373901
+      ],
       "properties": {
         "disc_radius": "2.0",
         "seed": "42"
@@ -118,7 +148,10 @@
       "id": "solve_base",
       "node_type": "terrain.SolveBaseGraphElevationNode",
       "name": "Solve Base Elevation",
-      "pos": [1320, -120],
+      "pos": [
+        1423.6629434392992,
+        -338.05883866733944
+      ],
       "properties": {
         "max_delta": "0.05"
       }
@@ -127,7 +160,10 @@
       "id": "terraces",
       "node_type": "terrain.TerraceMaxDeltaNode",
       "name": "Terrace Modulation",
-      "pos": [1320, 110],
+      "pos": [
+        1920.94693717789,
+        -255.44524377910483
+      ],
       "properties": {
         "enabled_curve": "False",
         "base_max_delta": "0.05",
@@ -143,7 +179,10 @@
       "id": "rivers",
       "node_type": "terrain.ComputeRiverNetworkNode",
       "name": "Compute Rivers",
-      "pos": [1600, -220],
+      "pos": [
+        1965.2737116329063,
+        -467.98401398365485
+      ],
       "properties": {
         "directional_inertia": "0.2",
         "default_water_level": "0.8",
@@ -154,7 +193,10 @@
       "id": "downcut",
       "node_type": "terrain.ApplyRiverDowncuttingNode",
       "name": "Apply River Downcutting",
-      "pos": [1600, -20],
+      "pos": [
+        2426.2067742469917,
+        47.445450958938025
+      ],
       "properties": {
         "river_downcutting": "1.7",
         "max_delta": "0.05"
@@ -164,14 +206,20 @@
       "id": "bundle",
       "node_type": "terrain.BundleTerrainOutputsNode",
       "name": "Bundle Terrain Outputs",
-      "pos": [1890, -40],
+      "pos": [
+        2946.2598492590037,
+        172.98043306629174
+      ],
       "properties": {}
     },
     {
       "id": "erosion",
       "node_type": "terrain.ParticleErosionNode",
       "name": "Particle Erosion",
-      "pos": [2160, -40],
+      "pos": [
+        3209.2598492590037,
+        -67.01956693370826
+      ],
       "properties": {
         "erosion_iterations": "12000",
         "erosion_inertia": "0.3",
@@ -187,19 +235,76 @@
       }
     },
     {
-      "id": "slope_overlay",
-      "node_type": "terrain.SlopeHeuristicNode",
-      "name": "Slope Overlay",
-      "pos": [2440, -140],
+      "id": "03e837a411434cf2afabee98ad0ce9d8",
+      "node_type": "terrain.BiomeHeuristicNode",
+      "name": "Biome",
+      "pos": [
+        4504.259849259004,
+        -80.01956693370826
+      ],
       "properties": {
         "cellsize_override": "0.0"
       }
     },
     {
-      "id": "flow_overlay",
+      "id": "e2256eedb0c440bdbf63ae2762cd50d1",
+      "node_type": "terrain.TemperatureHeuristicNode",
+      "name": "Temperature",
+      "pos": [
+        3686.2598492590037,
+        540.9804330662918
+      ],
+      "properties": {
+        "cellsize_override": "0.0",
+        "temperature_pattern": "gradient"
+      }
+    },
+    {
+      "id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
+      "node_type": "terrain.PrecipitationHeuristicNode",
+      "name": "Precipitation",
+      "pos": [
+        3699.2598492590037,
+        822.9804330662918
+      ],
+      "properties": {
+        "cellsize_override": "0.0",
+        "precip_lat_pattern": "gradient",
+        "prevailing_wind_model": "three_cell"
+      }
+    },
+    {
+      "id": "0a74bd053ba445a7a8fb884e2339550b",
+      "node_type": "terrain.PETHeuristicNode",
+      "name": "PET",
+      "pos": [
+        4285.259849259004,
+        507.98043306629177
+      ],
+      "properties": {
+        "cellsize_override": "0.0"
+      }
+    },
+    {
+      "id": "f6bf5dd15e404afab799cf02206bbd9b",
+      "node_type": "terrain.TWIHeuristicNode",
+      "name": "TWI",
+      "pos": [
+        4097.259849259004,
+        204.98043306629174
+      ],
+      "properties": {
+        "cellsize_override": "0.0"
+      }
+    },
+    {
+      "id": "0308242ed0c64a02977a51c542dcf27e",
       "node_type": "terrain.FlowAccumulationHeuristicNode",
-      "name": "Flow Overlay",
-      "pos": [2440, 30],
+      "name": "Flow Accumulation",
+      "pos": [
+        3642.2598492590037,
+        222.98043306629174
+      ],
       "properties": {
         "cellsize_override": "0.0"
       }
@@ -255,6 +360,12 @@
       "target_port": "land_mask"
     },
     {
+      "source_node_id": "land_mask",
+      "source_port": "land_mask",
+      "target_node_id": "bundle",
+      "target_port": "land_mask"
+    },
+    {
       "source_node_id": "sample_graph",
       "source_port": "terrain_graph",
       "target_node_id": "solve_base",
@@ -285,22 +396,16 @@
       "target_port": "river_network"
     },
     {
-      "source_node_id": "downcut",
-      "source_port": "terrain_graph",
-      "target_node_id": "bundle",
-      "target_port": "terrain_graph"
-    },
-    {
-      "source_node_id": "land_mask",
-      "source_port": "land_mask",
-      "target_node_id": "bundle",
-      "target_port": "land_mask"
-    },
-    {
       "source_node_id": "rivers",
       "source_port": "river_network",
       "target_node_id": "bundle",
       "target_port": "river_network"
+    },
+    {
+      "source_node_id": "downcut",
+      "source_port": "terrain_graph",
+      "target_node_id": "bundle",
+      "target_port": "terrain_graph"
     },
     {
       "source_node_id": "bundle",
@@ -311,23 +416,78 @@
     {
       "source_node_id": "erosion",
       "source_port": "terrain_bundle",
-      "target_node_id": "slope_overlay",
+      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
       "target_port": "terrain_bundle"
     },
     {
       "source_node_id": "erosion",
       "source_port": "terrain_bundle",
-      "target_node_id": "flow_overlay",
+      "target_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
       "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "0308242ed0c64a02977a51c542dcf27e",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "0a74bd053ba445a7a8fb884e2339550b",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
+      "source_port": "map_overlay",
+      "target_node_id": "0a74bd053ba445a7a8fb884e2339550b",
+      "target_port": "temperature"
+    },
+    {
+      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
+      "source_port": "map_overlay",
+      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
+      "target_port": "temperature"
+    },
+    {
+      "source_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
+      "source_port": "map_overlay",
+      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
+      "target_port": "precipitation"
+    },
+    {
+      "source_node_id": "0a74bd053ba445a7a8fb884e2339550b",
+      "source_port": "map_overlay",
+      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
+      "target_port": "pet"
+    },
+    {
+      "source_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
+      "source_port": "map_overlay",
+      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
+      "target_port": "twi"
+    },
+    {
+      "source_node_id": "0308242ed0c64a02977a51c542dcf27e",
+      "source_port": "map_overlay",
+      "target_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
+      "target_port": "flowacc"
     }
   ],
-  "pinned_node_id": "erosion",
+  "pinned_node_id": "combine_seed",
   "metadata": {
-    "description": "Simple demo graph showing seed-noise shaping, graph terrain generation, river downcutting, erosion, and heuristic overlays.",
-    "recommended_nodes_to_try": [
-      "erosion",
-      "slope_overlay",
-      "flow_overlay"
-    ]
+    "cwd": "/Users/rowan/Python-Geomorphology"
   }
 }

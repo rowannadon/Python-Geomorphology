@@ -444,8 +444,16 @@ class NodeEditorWidget(QWidget):
         self._update_node_visual_state(node)
         return node
 
+    def _current_view_center(self) -> Tuple[int, int]:
+        if not self.node_graph:
+            return (0, 0)
+        viewer = self.node_graph.viewer()
+        viewport_rect = viewer.viewport().rect()
+        scene_center = viewer.mapToScene(viewport_rect.center())
+        return (int(scene_center.x()), int(scene_center.y()))
+
     def add_node(self, node_cls: Type[TerrainBaseNode]):
-        self._create_node_instance(node_cls, pos=(0, 0))
+        self._create_node_instance(node_cls, pos=self._current_view_center())
 
     def _setup_node_execution(self, node):
         if not isinstance(node, TerrainBaseNode):

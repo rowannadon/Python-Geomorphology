@@ -15,8 +15,10 @@ from ...io import HeightmapImporter
 from .context import get_global_context
 from .contracts import (
     HeightfieldData,
+    MapOverlayData,
     MaskData,
     PORT_TYPE_HEIGHTFIELD,
+    PORT_TYPE_MAP_OVERLAY,
     PORT_TYPE_MASK,
     PORT_TYPE_SETTINGS,
     SettingsData,
@@ -201,6 +203,10 @@ class TerrainBaseNode(BaseNode):
 
     def get_input_mask(self, port_name: str = "mask", *, required: bool = True) -> Optional[MaskData]:
         data = self.get_input_data(port_name, required=required, expected_types=(PORT_TYPE_MASK,))
+        return data
+
+    def get_input_overlay(self, port_name: str = "map_overlay", *, required: bool = True) -> Optional[MapOverlayData]:
+        data = self.get_input_data(port_name, required=required, expected_types=(PORT_TYPE_MAP_OVERLAY,))
         return data
 
     def get_visualization_payload(self):
