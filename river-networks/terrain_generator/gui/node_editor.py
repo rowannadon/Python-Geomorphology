@@ -68,6 +68,7 @@ from .nodes import (
     PrecipitationHeuristicNode,
     ProjectSettingsNode,
     RasterizeGraphFieldNode,
+    RockLayerOverlayNode,
     RockStackWarpNode,
     SampleTerrainGraphNode,
     save_graph_payload,
@@ -296,6 +297,7 @@ class NodeEditorWidget(QWidget):
             ("Terrace/Max Delta", TerraceMaxDeltaNode),
             ("Rock Stack Warp", RockStackWarpNode),
             ("Assign Rock Layers", AssignRockLayersNode),
+            ("Rock Layer Overlay", RockLayerOverlayNode),
             ("Compute River Network", ComputeRiverNetworkNode),
             ("Apply River Downcutting", ApplyRiverDowncuttingNode),
             ("Rasterize Graph Field", RasterizeGraphFieldNode),
@@ -407,7 +409,7 @@ class NodeEditorWidget(QWidget):
             CombineNode, DomainWarpNode, CurveRemapNode, ThresholdFloodNode,
             GaussianBlurNode, InvertNode, NormalizeClampNode, LandMaskNode,
             SampleTerrainGraphNode, SolveBaseGraphElevationNode, TerraceMaxDeltaNode,
-            RockStackWarpNode, AssignRockLayersNode, ComputeRiverNetworkNode,
+            RockStackWarpNode, AssignRockLayersNode, RockLayerOverlayNode, ComputeRiverNetworkNode,
             ApplyRiverDowncuttingNode, RasterizeGraphFieldNode, BundleTerrainOutputsNode,
             BuildErosionParameterMapsNode, ParticleErosionNode,
             SlopeHeuristicNode, AspectHeuristicNode, NormalHeuristicNode,
@@ -706,7 +708,11 @@ class NodeEditorWidget(QWidget):
                 self.main_terrain_viewport.set_overlay_visible(False)
             self._set_terrain_on_viewports(terrain)
         elif isinstance(payload, MapOverlayData):
-            terrain = terrain_data_from_heightfield(payload.base_heightfield)
+            preview_bundle = payload.metadata.get("preview_bundle")
+            if isinstance(preview_bundle, TerrainBundleData):
+                terrain = terrain_data_from_bundle(preview_bundle)
+            else:
+                terrain = terrain_data_from_heightfield(payload.base_heightfield)
             self._set_terrain_on_viewports(terrain)
             self.node_viewport.set_overlay_image(payload.rgba)
             self.node_viewport.set_overlay_visible(True)

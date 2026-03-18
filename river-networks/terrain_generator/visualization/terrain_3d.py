@@ -112,11 +112,12 @@ class Terrain3DRenderer:
         self.vertex_dirty = True
 
         # Generate texture coordinates for overlay mapping
-        width_div = max(width - 1, 1)
-        height_div = max(height - 1, 1)
-        U = (X.astype(np.float32) / width_div)
-        V = (Z.astype(np.float32) / height_div)
-        # OpenGL expects the first row as the bottom of the texture, so we keep V as-is
+        # Align texture lookup with sample centers rather than cell corners to
+        # avoid a half-texel offset between rasterized overlays and the mesh.
+        width_div = max(width, 1)
+        height_div = max(height, 1)
+        U = ((X.astype(np.float32) + 0.5) / width_div)
+        V = ((Z.astype(np.float32) + 0.5) / height_div)
         self.texture_coords = np.column_stack((U.ravel(), V.ravel())).astype(np.float32)
         self.texcoord_dirty = True
 
@@ -167,15 +168,6 @@ class Terrain3DRenderer:
     def update_colors(self):
         """Update vertex colors with lighting and effects (vectorized)."""
         if self.terrain_data is None or self.vertices is None:
-            return
-
-        if self.overlay_enabled and self.overlay_image is not None:
-            # Use lighting-only colors so the texture overlay remains visible
-            lighting = self._compute_lighting_factors()
-            rgba = np.ones((lighting.shape[0], 4), dtype=np.float32)
-            rgba[:, 0:3] = lighting[:, None]
-            self.colors = rgba
-            self.color_dirty = True
             return
 
         heightmap = self.terrain_data.heightmap
@@ -256,7 +248,7 @@ class Terrain3DRenderer:
         if self.vertices is None or self.indices is None or self.colors is None:
             return
 
-        use_texture = (
+        use_overlay = (
             self.overlay_enabled and
             self.overlay_image is not None and
             self.texture_coords is not None and
@@ -266,34 +258,45 @@ class Terrain3DRenderer:
         if not self._ensure_gpu_buffers():
             return
 
-        use_texture = use_texture and self.texcoord_buffer_id is not None
+        use_overlay = use_overlay and self.texcoord_buffer_id is not None
 
         glEnableClientState(GL_VERTEX_ARRAY)
         glEnableClientState(GL_COLOR_ARRAY)
-        if use_texture:
-            glEnable(GL_TEXTURE_2D)
-            glEnableClientState(GL_TEXTURE_COORD_ARRAY)
-            glBindBuffer(GL_ARRAY_BUFFER, self.texcoord_buffer_id)
-            glTexCoordPointer(2, GL_FLOAT, 0, ctypes.c_void_p(0))
-        else:
-            glDisable(GL_TEXTURE_2D)
-
         glBindBuffer(GL_ARRAY_BUFFER, self.vertex_buffer_id)
         glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
-
         glBindBuffer(GL_ARRAY_BUFFER, self.color_buffer_id)
         glColorPointer(4, GL_FLOAT, 0, ctypes.c_void_p(0))
-
         glBindBuffer(GL_ARRAY_BUFFER, 0)
-
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.index_buffer_id)
         glDrawElements(GL_TRIANGLES, self.index_count, GL_UNSIGNED_INT, ctypes.c_void_p(0))
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
-        if use_texture:
+        if use_overlay:
+            glEnable(GL_TEXTURE_2D)
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+            glEnable(GL_POLYGON_OFFSET_FILL)
+            glPolygonOffset(-1.0, -1.0)
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
+            glEnableClientState(GL_TEXTURE_COORD_ARRAY)
+            glDisableClientState(GL_COLOR_ARRAY)
+            glColor4f(1.0, 1.0, 1.0, 0.7)
+
+            glBindBuffer(GL_ARRAY_BUFFER, self.vertex_buffer_id)
+            glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
+            glBindBuffer(GL_ARRAY_BUFFER, self.texcoord_buffer_id)
+            glTexCoordPointer(2, GL_FLOAT, 0, ctypes.c_void_p(0))
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+            glDrawElements(GL_TRIANGLES, self.index_count, GL_UNSIGNED_INT, ctypes.c_void_p(0))
+
+            glEnableClientState(GL_COLOR_ARRAY)
             glDisableClientState(GL_TEXTURE_COORD_ARRAY)
+            glDisable(GL_POLYGON_OFFSET_FILL)
+            glDisable(GL_BLEND)
             glBindTexture(GL_TEXTURE_2D, 0)
             glDisable(GL_TEXTURE_2D)
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
         glDisableClientState(GL_COLOR_ARRAY)
         glDisableClientState(GL_VERTEX_ARRAY)
 

@@ -18,6 +18,7 @@ from .base_nodes import TerrainBaseNode, _parse_float, _parse_int, _parse_points
 from .contracts import (
     HeightfieldData,
     MaskData,
+    PORT_TYPE_MAP_OVERLAY,
     PORT_TYPE_HEIGHTFIELD,
     PORT_TYPE_MASK,
     PORT_TYPE_RIVER_NETWORK,
@@ -26,6 +27,7 @@ from .contracts import (
     RiverNetworkData,
     TerrainBundleData,
     TerrainGraphData,
+    overlay_from_labels,
 )
 
 
@@ -54,6 +56,13 @@ def _render_categorical_map(graph: TerrainGraphData, values: np.ndarray) -> np.n
 def _rasterize_graph_height(graph: TerrainGraphData, values: np.ndarray) -> np.ndarray:
     tri = _triangulation_to_matplotlib(graph.triangulation)
     return render_triangulation((graph.dimension, graph.dimension), tri, np.asarray(values, dtype=np.float64), triangulation=tri)
+
+
+def _heightfield_from_graph(graph: TerrainGraphData, *, name: str) -> HeightfieldData:
+    if graph.point_height is None:
+        raise ValueError("Graph has no point heights to rasterize.")
+    arr = _rasterize_graph_height(graph, graph.point_height).astype(np.float32)
+    return HeightfieldData(array=arr, name=name)
 
 
 def _coerce_layers_payload(payload: Any) -> list[Dict[str, Any]]:
@@ -474,6 +483,46 @@ class RasterizeGraphFieldNode(TerrainBaseNode):
         self.set_output_data(payload)
         self.signals.execution_finished.emit(self)
         return payload
+
+
+class RockLayerOverlayNode(TerrainBaseNode):
+    """Rasterize rock assignments and display them as a terrain overlay."""
+
+    NODE_NAME = "Rock Layer Overlay"
+    INPUT_TYPES = {"terrain_graph": (PORT_TYPE_TERRAIN_GRAPH,)}
+    OUTPUT_TYPES = {"map_overlay": (PORT_TYPE_MAP_OVERLAY,)}
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(155, 105, 80)
+        self.add_input("terrain_graph", color=(180, 120, 200))
+        self.add_output("map_overlay", color=(180, 180, 120))
+
+    def execute(self):
+        graph = self.get_input_data("terrain_graph", expected_types=(PORT_TYPE_TERRAIN_GRAPH,))
+        if graph.rock_assignments is None:
+            raise ValueError("Graph has no rock assignments.")
+        base_heightfield = _heightfield_from_graph(graph, name="Rock Layer Base Height")
+        rock_map = _render_categorical_map(graph, graph.rock_assignments).astype(np.int32)
+        emergent_land = np.asarray(base_heightfield.array > 0.0, dtype=bool)
+        overlay = overlay_from_labels(
+            "rock_assignments",
+            self._base_name,
+            rock_map,
+            base_heightfield,
+            land_mask=emergent_land,
+        )
+        preview_bundle = TerrainBundleData(
+            heightfield=base_heightfield,
+            land_mask=MaskData(array=emergent_land, name="Preview Land Mask"),
+            rock_map=rock_map,
+            rock_types=tuple(layer.name for layer in graph.rock_layers),
+            rock_colors=tuple(graph.rock_colors),
+        )
+        overlay.metadata["preview_bundle"] = preview_bundle
+        self.set_output_data(overlay)
+        self.signals.execution_finished.emit(self)
+        return overlay
 
 
 class BundleTerrainOutputsNode(TerrainBaseNode):
