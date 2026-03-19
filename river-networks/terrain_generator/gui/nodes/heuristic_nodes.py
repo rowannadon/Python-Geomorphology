@@ -70,8 +70,8 @@ class HeuristicMapNode(TerrainBaseNode):
         "terrain_bundle": (PORT_TYPE_TERRAIN_BUNDLE,),
         "heightfield": (PORT_TYPE_HEIGHTFIELD,),
         "flow_override": (PORT_TYPE_HEIGHTFIELD,),
-        "deposition_map": (PORT_TYPE_HEIGHTFIELD,),
-        "rock_map": (PORT_TYPE_HEIGHTFIELD,),
+        "deposition_map": (PORT_TYPE_MAP_OVERLAY,),
+        "rock_map": (PORT_TYPE_MAP_OVERLAY,),
     }
     OUTPUT_TYPES = {"map_overlay": (PORT_TYPE_MAP_OVERLAY,)}
 
@@ -84,8 +84,8 @@ class HeuristicMapNode(TerrainBaseNode):
         self.add_input("terrain_bundle", color=(140, 200, 210))
         self.add_input("heightfield", color=(150, 200, 150))
         self.add_input("flow_override", color=(140, 180, 220))
-        self.add_input("deposition_map", color=(150, 200, 150))
-        self.add_input("rock_map", color=(150, 200, 150))
+        self.add_input("deposition_map", color=(180, 180, 120))
+        self.add_input("rock_map", color=(180, 180, 120))
         for dependency in self.SPEC.dependencies:
             self.add_input(dependency.port_name, color=(180, 180, 120))
         self.add_output("map_overlay", color=(180, 180, 120))
@@ -164,8 +164,8 @@ class HeuristicMapNode(TerrainBaseNode):
         bundle: Optional[TerrainBundleData],
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[Tuple[str, ...]], Optional[Tuple[Optional[Tuple[int, int, int]], ...]]]:
         flow_override = self.get_input_heightfield("flow_override", required=False)
-        deposition_map = self.get_input_heightfield("deposition_map", required=False)
-        rock_map = self.get_input_heightfield("rock_map", required=False)
+        deposition_map = self.get_input_overlay("deposition_map", required=False)
+        rock_map = self.get_input_overlay("rock_map", required=False)
 
         flow_array = None
         if flow_override is not None:

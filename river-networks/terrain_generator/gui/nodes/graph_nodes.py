@@ -26,6 +26,7 @@ from .contracts import (
     RiverNetworkData,
     TerrainBundleData,
     TerrainGraphData,
+    overlay_from_deposition,
     overlay_from_labels,
 )
 
@@ -614,9 +615,9 @@ class UnbundleTerrainBundleNode(TerrainBaseNode):
         "heightfield": (PORT_TYPE_HEIGHTFIELD,),
         "land_mask": (PORT_TYPE_MASK,),
         "river_volume": (PORT_TYPE_HEIGHTFIELD,),
-        "watershed_mask": (PORT_TYPE_HEIGHTFIELD,),
-        "deposition_map": (PORT_TYPE_HEIGHTFIELD,),
-        "rock_map": (PORT_TYPE_HEIGHTFIELD,),
+        "watershed_mask": (PORT_TYPE_MAP_OVERLAY,),
+        "deposition_map": (PORT_TYPE_MAP_OVERLAY,),
+        "rock_map": (PORT_TYPE_MAP_OVERLAY,),
     }
 
     def __init__(self):
@@ -626,15 +627,53 @@ class UnbundleTerrainBundleNode(TerrainBaseNode):
         self.add_output("heightfield", color=(150, 200, 150))
         self.add_output("land_mask", color=(120, 180, 120))
         self.add_output("river_volume", color=(140, 180, 220))
-        self.add_output("watershed_mask", color=(150, 200, 150))
-        self.add_output("deposition_map", color=(150, 200, 150))
-        self.add_output("rock_map", color=(150, 200, 150))
+        self.add_output("watershed_mask", color=(180, 180, 120))
+        self.add_output("deposition_map", color=(180, 180, 120))
+        self.add_output("rock_map", color=(180, 180, 120))
 
     def execute(self):
         bundle = self.get_input_data("terrain_bundle", expected_types=(PORT_TYPE_TERRAIN_BUNDLE,))
         heightfield = bundle.heightfield
         shape = heightfield.array.shape
         land_mask = bundle.land_mask or MaskData(array=np.asarray(heightfield.array > 0.0, dtype=bool), name="Land Mask")
+        watershed_array = (
+            np.asarray(bundle.watershed_mask, dtype=np.int32)
+            if bundle.watershed_mask is not None
+            else np.zeros(shape, dtype=np.int32)
+        )
+        deposition_array = (
+            np.asarray(bundle.deposition_map, dtype=np.float32)
+            if bundle.deposition_map is not None
+            else np.zeros(shape, dtype=np.float32)
+        )
+        rock_array = (
+            np.asarray(bundle.rock_map, dtype=np.int32)
+            if bundle.rock_map is not None
+            else np.zeros(shape, dtype=np.int32)
+        )
+        watershed_overlay = overlay_from_labels(
+            "watershed_mask",
+            "Watershed Mask",
+            watershed_array,
+            heightfield,
+            land_mask=np.asarray(land_mask.array, dtype=bool),
+        )
+        deposition_overlay = overlay_from_deposition(
+            "deposition_map",
+            "Deposition Map",
+            deposition_array,
+            heightfield,
+            land_mask=np.asarray(land_mask.array, dtype=bool),
+        )
+        rock_overlay = overlay_from_labels(
+            "rock_map",
+            "Rock Map",
+            rock_array,
+            heightfield,
+            land_mask=np.asarray(land_mask.array, dtype=bool),
+        )
+        for overlay in (watershed_overlay, deposition_overlay, rock_overlay):
+            overlay.metadata["preview_bundle"] = bundle
         payload = {
             "heightfield": heightfield,
             "land_mask": land_mask,
@@ -646,37 +685,19 @@ class UnbundleTerrainBundleNode(TerrainBaseNode):
                 ),
                 name="River Volume",
             ),
-            "watershed_mask": HeightfieldData(
-                array=(
-                    np.asarray(bundle.watershed_mask, dtype=np.float32)
-                    if bundle.watershed_mask is not None
-                    else np.zeros(shape, dtype=np.float32)
-                ),
-                name="Watershed Mask",
-                metadata={"source_dtype": "int32"},
-            ),
-            "deposition_map": HeightfieldData(
-                array=(
-                    np.asarray(bundle.deposition_map, dtype=np.float32)
-                    if bundle.deposition_map is not None
-                    else np.zeros(shape, dtype=np.float32)
-                ),
-                name="Deposition Map",
-            ),
-            "rock_map": HeightfieldData(
-                array=(
-                    np.asarray(bundle.rock_map, dtype=np.float32)
-                    if bundle.rock_map is not None
-                    else np.zeros(shape, dtype=np.float32)
-                ),
-                name="Rock Map",
-                metadata={
-                    "source_dtype": "int32",
-                    "rock_types": list(bundle.rock_types),
-                    "rock_colors": list(bundle.rock_colors),
-                },
-            ),
+            "watershed_mask": watershed_overlay,
+            "deposition_map": deposition_overlay,
+            "rock_map": rock_overlay,
         }
+        watershed_overlay.metadata["source_dtype"] = "int32"
+        deposition_overlay.metadata["source_dtype"] = "float32"
+        rock_overlay.metadata.update(
+            {
+                "source_dtype": "int32",
+                "rock_types": list(bundle.rock_types),
+                "rock_colors": list(bundle.rock_colors),
+            }
+        )
         self.set_output_data(payload)
         return payload
 

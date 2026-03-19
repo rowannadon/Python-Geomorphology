@@ -96,12 +96,19 @@ from .nodes import (
     terrain_data_from_bundle,
     terrain_data_from_heightfield,
     UnbundleTerrainBundleNode,
+    ViewerNode,
     WorldSettingsNode,
     port_type_for_payload,
     SettingsData,
 )
 
 NODE_MENU_GROUPS: Tuple[Tuple[str, Tuple[Tuple[str, Type[TerrainBaseNode]], ...]], ...] = (
+    (
+        "View",
+        (
+            ("Viewer", ViewerNode),
+        ),
+    ),
     (
         "Settings",
         (
@@ -483,7 +490,7 @@ class NodeEditorWidget(QWidget):
 
         layout.addWidget(toolbar)
 
-        self.status_bar = QLabel("Display: None - Double-click a node to pin")
+        self.status_bar = QLabel("Display: None - Double-click a viewer node to pin")
         self.status_bar.setStyleSheet("background: #2a2a2a; padding: 4px; color: #aaa;")
         layout.addWidget(self.status_bar)
 
@@ -800,6 +807,9 @@ class NodeEditorWidget(QWidget):
                     )
 
     def _on_node_double_clicked(self, node):
+        if not isinstance(node, ViewerNode):
+            self.status_bar.setText("Display: Double-click a viewer node to pin and preview")
+            return
         self._validate_node_input_types(node)
         self._pin_node(node)
         self.execute_node_async(node)
@@ -844,7 +854,7 @@ class NodeEditorWidget(QWidget):
 
     def _update_status_bar(self):
         if self.pinned_node is None:
-            self.status_bar.setText("Display: None - Double-click a node to pin")
+            self.status_bar.setText("Display: None - Double-click a viewer node to pin")
         else:
             auto_status = "Auto-Update ON" if self.auto_update_enabled else "Auto-Update OFF"
             self.status_bar.setText(f"Display: {self.pinned_node._base_name} (Pinned) - {auto_status}")

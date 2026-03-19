@@ -47,7 +47,9 @@ from .contracts import (
     PORT_TYPE_MAP_OVERLAY,
     PORT_TYPE_MASK,
     PORT_TYPE_SETTINGS,
+    PORT_TYPE_TERRAIN_BUNDLE,
     SettingsData,
+    TerrainBundleData,
     port_type_for_payload,
 )
 from .custom_node_view import CustomNodeItem
@@ -533,6 +535,81 @@ class TerrainBaseNode(BaseNode):
         if tooltip:
             widget.setToolTip(tooltip)
         self.add_custom_widget(widget, widget_type=NodePropWidgetEnum.FILE_OPEN.value, tab=tab)
+
+
+class ViewerNode(TerrainBaseNode):
+    """Sink node that controls what is shown in the terrain viewport."""
+
+    NODE_NAME = "Viewer"
+    INPUT_TYPES = {
+        "terrain_bundle": (PORT_TYPE_TERRAIN_BUNDLE,),
+        "heightfield": (PORT_TYPE_HEIGHTFIELD,),
+        "map_overlay": (PORT_TYPE_MAP_OVERLAY,),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(70, 120, 110)
+        self.add_input("terrain_bundle", color=(140, 200, 210))
+        self.add_input("heightfield", color=(150, 200, 150))
+        self.add_input("map_overlay", color=(180, 180, 120))
+
+    @staticmethod
+    def _terrain_shape(payload: HeightfieldData | TerrainBundleData) -> tuple[int, int]:
+        if isinstance(payload, TerrainBundleData):
+            return payload.heightfield.array.shape
+        return payload.array.shape
+
+    def _resolve_terrain_source(self, overlay: Optional[MapOverlayData]) -> HeightfieldData | TerrainBundleData | None:
+        bundle = self.get_input_data("terrain_bundle", required=False, expected_types=(PORT_TYPE_TERRAIN_BUNDLE,))
+        if isinstance(bundle, TerrainBundleData):
+            return bundle
+        heightfield = self.get_input_heightfield("heightfield", required=False)
+        if isinstance(heightfield, HeightfieldData):
+            return heightfield
+        if overlay is None:
+            return None
+        preview_bundle = overlay.metadata.get("preview_bundle")
+        if isinstance(preview_bundle, TerrainBundleData):
+            return preview_bundle
+        return overlay.base_heightfield
+
+    def execute(self):
+        overlay = self.get_input_overlay(required=False)
+        terrain_source = self._resolve_terrain_source(overlay)
+        if terrain_source is None and overlay is None:
+            raise ValueError("Viewer requires a terrain bundle, heightfield, or map overlay input.")
+
+        if overlay is None:
+            self.set_output_data(terrain_source)
+            return terrain_source
+
+        overlay_shape = overlay.rgba.shape[:2]
+        terrain_shape = self._terrain_shape(terrain_source)
+        if terrain_shape != overlay_shape:
+            raise ValueError(
+                f"Viewer overlay shape {overlay_shape} does not match terrain shape {terrain_shape}."
+            )
+
+        metadata = dict(overlay.metadata)
+        if isinstance(terrain_source, TerrainBundleData):
+            metadata["preview_bundle"] = terrain_source
+            base_heightfield = terrain_source.heightfield
+        else:
+            metadata.pop("preview_bundle", None)
+            base_heightfield = terrain_source
+
+        payload = MapOverlayData(
+            key=overlay.key,
+            display_name=overlay.display_name,
+            array=overlay.array,
+            rgba=overlay.rgba,
+            base_heightfield=base_heightfield,
+            overlay_kind=overlay.overlay_kind,
+            metadata=metadata,
+        )
+        self.set_output_data(payload)
+        return payload
 
 
 class ProjectSettingsNode(TerrainBaseNode):

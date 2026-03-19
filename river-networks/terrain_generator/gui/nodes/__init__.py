@@ -42,6 +42,7 @@ from .base_nodes import (
     ShapeNode,
     TerrainBaseNode,
     ThresholdFloodNode,
+    ViewerNode,
     WorldSettingsNode,
     GaussianBlurNode,
 )
@@ -118,6 +119,7 @@ __all__ = [
     "NodeProgressBar",
     "NodeSignals",
     "TerrainBaseNode",
+    "ViewerNode",
     "ProjectSettingsNode",
     "WorldSettingsNode",
     "ConstantNode",
