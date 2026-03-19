@@ -18,7 +18,7 @@ class PresetError(RuntimeError):
 class PresetManager:
     """Handle serialization of combined terrain and heuristic presets."""
 
-    PRESET_VERSION = 1
+    PRESET_VERSION = 2
 
     def __init__(self, preset_directory: Optional[Union[str, Path]] = None):
         if preset_directory is None:
@@ -115,4 +115,55 @@ class PresetManager:
         if not isinstance(metadata, dict):
             metadata = {}
 
+        version = data.get('version', metadata.get('preset_version', 1))
+        try:
+            version = int(version)
+        except (TypeError, ValueError):
+            version = 1
+
+        if version < 2:
+            terrain, heuristics = self._migrate_v1_distance_units(terrain, heuristics)
+
         return terrain, heuristics, metadata
+
+    @staticmethod
+    def _migrate_v1_distance_units(
+        terrain: Dict[str, Any],
+        heuristics: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        terrain_copy = dict(terrain)
+        heuristics_copy = dict(heuristics)
+        numeric_controls = dict(terrain_copy.get('numeric_controls', {}) or {})
+        fbm = dict(terrain_copy.get('fbm', {}) or {})
+        heuristic_controls = dict(heuristics_copy.get('heuristic_controls', {}) or {})
+
+        try:
+            dimension = float(numeric_controls.get('dimension', 1024.0))
+        except (TypeError, ValueError):
+            dimension = 1024.0
+        try:
+            cellsize = float(heuristic_controls.get('cellsize', 1500.0))
+        except (TypeError, ValueError):
+            cellsize = 1500.0
+
+        terrain_size_km = max(cellsize, 1e-6) * max(dimension, 1.0) / 1000.0
+        scale = terrain_size_km / 1024.0
+
+        def _scale(mapping: Dict[str, Any], key: str):
+            if key not in mapping:
+                return
+            try:
+                mapping[key] = float(mapping[key]) * scale
+            except (TypeError, ValueError):
+                return
+
+        for key in ('disc_radius', 'erosion_step_size'):
+            _scale(numeric_controls, key)
+        for key in ('offset_amplitude', 'blur_distance', 'edge_falloff_distance'):
+            _scale(fbm, key)
+        _scale(heuristic_controls, 'biome_mixing')
+
+        terrain_copy['numeric_controls'] = numeric_controls
+        terrain_copy['fbm'] = fbm
+        heuristics_copy['heuristic_controls'] = heuristic_controls
+        return terrain_copy, heuristics_copy

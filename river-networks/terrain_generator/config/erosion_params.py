@@ -32,6 +32,7 @@ class ErosionParameterSet:
     values: Dict[str, Union[int, float]] = field(default_factory=dict)
     source_path: Optional[Path] = None
     base_albedo_rgb: Optional[Tuple[int, int, int]] = None
+    distance_unit: str = 'km'
 
     def resolve(self, defaults: Mapping[str, Union[int, float]]) -> Dict[str, Union[int, float]]:
         """Return a mapping containing values with defaults filled in."""
@@ -47,6 +48,7 @@ class ErosionParameterSet:
         """Serialize to a JSON-compatible mapping."""
         payload: Dict[str, Any] = {'name': self.name}
         payload.update(self.values)
+        payload['distance_units'] = self.distance_unit
         if self.base_albedo_rgb is not None:
             payload['base_albedo_rgb'] = list(self.base_albedo_rgb)
         return payload
@@ -54,6 +56,7 @@ class ErosionParameterSet:
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any], *, fallback_name: str = 'Unnamed Erosion Set') -> 'ErosionParameterSet':
         name = str(payload.get('name', fallback_name))
+        distance_unit = str(payload.get('distance_units', 'legacy_cells')).strip().lower() or 'legacy_cells'
         values: Dict[str, Union[int, float]] = {}
         for key, caster in NUMBER_FIELDS.items():
             if key not in payload:
@@ -76,7 +79,7 @@ class ErosionParameterSet:
                     base_albedo = tuple(max(0, min(255, comp)) for comp in components[:3])  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 base_albedo = None
-        return cls(name=name, values=values, base_albedo_rgb=base_albedo)
+        return cls(name=name, values=values, base_albedo_rgb=base_albedo, distance_unit=distance_unit)
 
     @classmethod
     def from_defaults(cls, defaults: Mapping[str, Union[int, float]], *, name: str = 'Current Erosion Settings') -> 'ErosionParameterSet':
@@ -88,7 +91,7 @@ class ErosionParameterSet:
                 values[key] = caster(defaults[key])
             except (TypeError, ValueError):
                 continue
-        return cls(name=name, values=values)
+        return cls(name=name, values=values, distance_unit='km')
 
 
 def load_erosion_parameters(path: Union[str, Path]) -> ErosionParameterSet:

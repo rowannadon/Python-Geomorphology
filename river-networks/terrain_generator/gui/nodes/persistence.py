@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
 
-GRAPH_SCHEMA_VERSION = 1
+GRAPH_SCHEMA_VERSION = 2
 
 
 def save_graph_payload(path: str, payload: Dict[str, Any]) -> Path:

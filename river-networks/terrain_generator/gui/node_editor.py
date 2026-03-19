@@ -8,7 +8,7 @@ import uuid
 from collections import defaultdict, deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Type
+from typing import Any, Dict, Optional, Tuple, Type
 
 import numpy as np
 from NodeGraphQt import NodeGraph
@@ -61,6 +61,7 @@ from .nodes import (
     ForestDensityHeuristicNode,
     GaussianBlurNode,
     GroundcoverDensityHeuristicNode,
+    GRAPH_SCHEMA_VERSION,
     HeightfieldData,
     ImportHeightmapNode,
     InvertNode,
@@ -1008,7 +1009,88 @@ class NodeEditorWidget(QWidget):
         pinned_id = node_ids.get(self.pinned_node) if self.pinned_node is not None else None
         return build_graph_payload(nodes=nodes_payload, connections=connections, pinned_node_id=pinned_id)
 
+    @staticmethod
+    def _migrated_distance_value(value: Any, scale: float) -> Any:
+        try:
+            scaled = float(value) * scale
+        except (TypeError, ValueError):
+            return value
+        if isinstance(value, str):
+            return f"{scaled:.12g}"
+        return scaled
+
+    def _migrate_legacy_graph_payload(self, payload: Dict[str, object]) -> Dict[str, object]:
+        try:
+            version = int(payload.get("version", 1))
+        except (TypeError, ValueError):
+            version = 1
+        if version >= GRAPH_SCHEMA_VERSION:
+            return payload
+
+        migrated = dict(payload)
+        raw_nodes = payload.get("nodes", []) or []
+        nodes_data = [dict(entry) for entry in raw_nodes if isinstance(entry, dict)]
+
+        dimension = 1024.0
+        terrain_size_km = 0.0
+        fallback_cellsize = 1500.0
+        for entry in nodes_data:
+            node_type = entry.get("node_type")
+            properties = entry.get("properties", {})
+            if not isinstance(properties, dict):
+                continue
+            if node_type == "terrain.ProjectSettingsNode":
+                try:
+                    dimension = float(properties.get("dimension", 1024) or 1024)
+                except (TypeError, ValueError):
+                    dimension = 1024.0
+            elif node_type == "terrain.WorldSettingsNode":
+                try:
+                    terrain_size_km = float(properties.get("terrain_size_km", 0) or 0)
+                except (TypeError, ValueError):
+                    terrain_size_km = 0.0
+                try:
+                    fallback_cellsize = float(properties.get("cellsize", 1500) or 1500)
+                except (TypeError, ValueError):
+                    fallback_cellsize = 1500.0
+        if terrain_size_km <= 0.0:
+            terrain_size_km = max(fallback_cellsize, 1e-6) * max(dimension, 1.0) / 1000.0
+        scale = terrain_size_km / 1024.0
+
+        for entry in nodes_data:
+            properties = entry.get("properties", {})
+            if not isinstance(properties, dict):
+                continue
+            migrated_properties = dict(properties)
+            node_type = entry.get("node_type")
+            if node_type == "terrain.WorldSettingsNode":
+                try:
+                    saved_terrain_size = float(migrated_properties.get("terrain_size_km", 0) or 0)
+                except (TypeError, ValueError):
+                    saved_terrain_size = 0.0
+                if saved_terrain_size <= 0.0:
+                    terrain_value = f"{terrain_size_km:.12g}" if isinstance(migrated_properties.get("terrain_size_km"), str) else terrain_size_km
+                    migrated_properties["terrain_size_km"] = terrain_value
+                if "biome_mixing" in migrated_properties:
+                    migrated_properties["biome_mixing"] = self._migrated_distance_value(migrated_properties["biome_mixing"], scale)
+            elif node_type == "terrain.SampleTerrainGraphNode" and "disc_radius" in migrated_properties:
+                migrated_properties["disc_radius"] = self._migrated_distance_value(migrated_properties["disc_radius"], scale)
+            elif node_type == "terrain.DomainWarpNode" and "offset_amplitude" in migrated_properties:
+                migrated_properties["offset_amplitude"] = self._migrated_distance_value(migrated_properties["offset_amplitude"], scale)
+            elif node_type == "terrain.GaussianBlurNode" and "sigma" in migrated_properties:
+                migrated_properties["sigma"] = self._migrated_distance_value(migrated_properties["sigma"], scale)
+            elif node_type == "terrain.ConnectInlandSeasNode" and "channel_width" in migrated_properties:
+                migrated_properties["channel_width"] = self._migrated_distance_value(migrated_properties["channel_width"], scale)
+            elif node_type == "terrain.ParticleErosionNode" and "erosion_step_size" in migrated_properties:
+                migrated_properties["erosion_step_size"] = self._migrated_distance_value(migrated_properties["erosion_step_size"], scale)
+            entry["properties"] = migrated_properties
+
+        migrated["version"] = GRAPH_SCHEMA_VERSION
+        migrated["nodes"] = nodes_data
+        return migrated
+
     def _apply_graph_payload(self, payload: Dict[str, object], *, base_path=None):
+        payload = self._migrate_legacy_graph_payload(payload)
         nodes_data = payload.get("nodes", []) or []
         connections = payload.get("connections", []) or []
         pinned_id = payload.get("pinned_node_id")

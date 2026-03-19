@@ -87,7 +87,7 @@ class NodeGraphContext:
             "shadow_decay_km": 150.0,
             "shadow_height_threshold_m": 150.0,
             "shadow_strength": 1.0,
-            "biome_mixing": 1,
+            "biome_mixing": 1.5,
             "temperature_pattern": "polar",
             "temperature_gradient_azimuth_deg": 0.0,
             "precip_lat_pattern": "two_bands",
@@ -117,6 +117,11 @@ class NodeGraphContext:
         if resolution is None:
             resolution = self.get_resolution()
         return max(self.get_terrain_size_km() * 1000.0 / max(int(resolution), 1), 1e-6)
+
+    def get_cellsize_km(self, resolution: Optional[int] = None) -> float:
+        if resolution is None:
+            resolution = self.get_resolution()
+        return max(self.get_terrain_size_km() / max(int(resolution), 1), 1e-9)
 
     def get_resolution(self) -> int:
         settings = self.get_project_settings()

@@ -164,7 +164,7 @@ class TerrainParameters:
     dimension: int = 256
     terrain_size_km: float = 1536.0
     seed: int = 42
-    disc_radius: float = 1.0
+    disc_radius: float = 1.5
     
     # Domain-warped FBM parameters
     fbm_scale: float = -2.0
@@ -175,14 +175,14 @@ class TerrainParameters:
     offset_scale: float = -2.0
     offset_lower: float = 1.5
     offset_upper: float = np.inf
-    offset_amplitude: float = 150.0
+    offset_amplitude: float = 225.0
     
     # Land/height parameters
     land_threshold: float = 0.5
-    blur_distance: float = 2.0
-    
-    # Edge falloff parameters (UPDATED)
-    edge_falloff_distance: float = 50.0  # Distance from edge where falloff starts (in pixels)
+    blur_distance: float = 3.0
+
+    # Edge falloff parameters
+    edge_falloff_distance: float = 75.0  # Distance from edge where falloff starts (in km)
     edge_falloff_rate: float = 4.0  # Exponential falloff rate (higher = steeper)
     edge_smoothness: float = 0.1  # Smoothness of the minimum function (lower = sharper)
     
@@ -230,7 +230,7 @@ class TerrainParameters:
     erosion_evaporation: float = 0.98
     erosion_gravity: float = 10.0
     erosion_max_lifetime: int = 60
-    erosion_step_size: float = 0.3
+    erosion_step_size: float = 0.45
     erosion_blur_iterations: int = 1
 
     # Rock layer configuration
@@ -303,9 +303,13 @@ class TerrainGenerator:
         resolution = max(float(shape[0]), 1.0)
         return self.terrain_size_m / resolution
 
-    def _legacy_units_to_cells(self, value: float, shape: Tuple[int, int]) -> float:
-        """Convert legacy scale-dependent values into raster cells for the target shape."""
-        return max(float(value), 0.0) * (float(shape[0]) / self.LEGACY_SCALE_RESOLUTION)
+    def _distance_km_to_cells(self, value: float, shape: Tuple[int, int]) -> float:
+        """Convert a world-space distance in kilometers into raster cells."""
+        return max(float(value), 0.0) * 1000.0 / self._cellsize_m(shape)
+
+    def _legacy_units_to_km(self, value: float) -> float:
+        """Convert a legacy 1024-based distance control to kilometers."""
+        return max(float(value), 0.0) * (self.params.terrain_size_km / self.LEGACY_SCALE_RESOLUTION)
 
     def _legacy_area_to_pixels(self, value: float, shape: Tuple[int, int]) -> int:
         """Convert legacy pixel-count area thresholds into the target raster resolution."""
@@ -459,12 +463,11 @@ class TerrainGenerator:
                 blur_iterations=int(base_params.get('erosion_blur_iterations', self.params.erosion_blur_iterations))
             )
 
-            step_scale = float(target_shape[0]) / self.LEGACY_SCALE_RESOLUTION
-            erosion.step_size *= step_scale
-            erosion.max_lifetime = max(1, int(round(erosion.max_lifetime / max(step_scale, 1e-6))))
+            erosion.step_size = self._distance_km_to_cells(erosion.step_size, target_shape)
             if 'erosion_step_size' in erosion_maps:
                 erosion_maps['erosion_step_size'] = np.ascontiguousarray(
-                    erosion_maps['erosion_step_size'] * step_scale
+                    np.maximum(np.asarray(erosion_maps['erosion_step_size'], dtype=np.float64), 0.0)
+                    * (target_shape[0] / max(self.params.terrain_size_km, 1e-9))
                 )
 
             # Preserve the original height scale
@@ -681,7 +684,7 @@ class TerrainGenerator:
         
         # Apply exponential falloff
         # Distance is measured inward from the edge
-        falloff_distance = self._legacy_units_to_cells(self.params.edge_falloff_distance, shape)
+        falloff_distance = self._distance_km_to_cells(self.params.edge_falloff_distance, shape)
         falloff_rate = self.params.edge_falloff_rate
         
         # Calculate mask value based on distance from edge
@@ -739,7 +742,7 @@ class TerrainGenerator:
         values = self._fbm(shape, self.params.fbm_scale, 
                         self.params.fbm_lower, self.params.fbm_upper)
         
-        offset_amplitude = self._legacy_units_to_cells(self.params.offset_amplitude, shape)
+        offset_amplitude = self._distance_km_to_cells(self.params.offset_amplitude, shape)
         
         offset_x = self._fbm(shape, self.params.offset_scale,
                             self.params.offset_lower, self.params.offset_upper)
@@ -782,7 +785,7 @@ class TerrainGenerator:
         )
         
         # Step 5: Blur to smooth beaches
-        blur_distance = self._legacy_units_to_cells(self.params.blur_distance, shape)
+        blur_distance = self._distance_km_to_cells(self.params.blur_distance, shape)
         if blur_distance > 0:
             flooded_heightfield = gaussian_blur(flooded_heightfield, sigma=blur_distance)
         
@@ -827,7 +830,7 @@ class TerrainGenerator:
     
     def _create_triangulation(self, shape: Tuple[int, int]) -> Tuple[np.ndarray, Any, List, List]:
         """Create point sampling and Delaunay triangulation with distance weights (Numba-accelerated)."""
-        disc_radius_cells = self._legacy_units_to_cells(self.params.disc_radius, shape)
+        disc_radius_cells = self._distance_km_to_cells(self.params.disc_radius, shape)
         points = poisson_disc_sampling(shape, max(disc_radius_cells, 1e-3))
         tri = scipy.spatial.Delaunay(points)
 
@@ -1049,7 +1052,13 @@ class TerrainGenerator:
                 resolved_layers.append(dict(defaults))
                 albedo_colors.append(None)
             else:
-                resolved_layers.append(param_set.resolve(defaults))
+                resolved = param_set.resolve(defaults)
+                if (
+                    param_set.distance_unit == 'legacy_cells'
+                    and 'erosion_step_size' in param_set.values
+                ):
+                    resolved['erosion_step_size'] = self._legacy_units_to_km(param_set.values['erosion_step_size'])
+                resolved_layers.append(resolved)
                 albedo_colors.append(param_set.base_albedo_rgb)
 
         return layers, resolved_layers, albedo_colors

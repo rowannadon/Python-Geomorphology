@@ -250,9 +250,9 @@ def _parse_points_text(raw_text: str, fallback: Sequence[Tuple[float, float]]) -
     return result or list(fallback)
 
 
-def _legacy_distance_to_cells(value: float, resolution: int, legacy_resolution: float = 1024.0) -> float:
-    """Convert legacy pixel-based distances into cell distances for the active resolution."""
-    return max(float(value), 0.0) * (max(int(resolution), 1) / legacy_resolution)
+def _distance_km_to_cells(value_km: float, terrain_size_km: float, resolution: int) -> float:
+    """Convert a world-space distance in kilometers into raster cells."""
+    return max(float(value_km), 0.0) / max(float(terrain_size_km) / max(int(resolution), 1), 1e-9)
 
 
 def _legacy_area_to_pixels(value: float, resolution: int, legacy_resolution: float = 1024.0) -> int:
@@ -598,7 +598,7 @@ class WorldSettingsNode(TerrainBaseNode):
         self.add_text_input("shadow_decay_km", "Shadow Decay (km)", text="150.0")
         self.add_text_input("shadow_height_threshold_m", "Shadow Height Threshold (m)", text="150.0")
         self.add_text_input("shadow_strength", "Shadow Strength", text="1.0")
-        self.add_text_input("biome_mixing", "Biome Mixing Radius", text="1")
+        self.add_text_input("biome_mixing", "Biome Mixing Radius (km)", text="1.5")
         self.add_combo_menu("temperature_pattern", "Temperature Pattern", items=["polar", "equatorial", "gradient"])
         self.set_property("temperature_pattern", "polar")
         self.add_text_input("temperature_gradient_azimuth_deg", "Temp Gradient Azimuth (deg)", text="0.0")
@@ -636,7 +636,7 @@ class WorldSettingsNode(TerrainBaseNode):
             "shadow_decay_km": _parse_float(self.get_property("shadow_decay_km"), 150.0),
             "shadow_height_threshold_m": _parse_float(self.get_property("shadow_height_threshold_m"), 150.0),
             "shadow_strength": _parse_float(self.get_property("shadow_strength"), 1.0),
-            "biome_mixing": max(0, _parse_int(self.get_property("biome_mixing"), 1)),
+            "biome_mixing": max(_parse_float(self.get_property("biome_mixing"), 1.5), 0.0),
             "temperature_pattern": str(self.get_property("temperature_pattern") or "polar"),
             "temperature_gradient_azimuth_deg": _parse_float(self.get_property("temperature_gradient_azimuth_deg"), 0.0),
             "precip_lat_pattern": str(self.get_property("precip_lat_pattern") or "two_bands"),
@@ -1036,7 +1036,7 @@ class DomainWarpNode(TerrainBaseNode):
         self.add_text_input("offset_scale", "Offset Scale", text="-5.0")
         self.add_text_input("offset_lower", "Offset Lower", text="1.5")
         self.add_text_input("offset_upper", "Offset Upper", text="inf")
-        self.add_text_input("offset_amplitude", "Warp Strength", text="150.0")
+        self.add_text_input("offset_amplitude", "Warp Strength (km)", text="225.0")
         self.add_text_input("seed", "Seed", text="42")
 
     @staticmethod
@@ -1075,7 +1075,11 @@ class DomainWarpNode(TerrainBaseNode):
         scale = _parse_float(self.get_property("offset_scale"), -5.0)
         lower = _parse_float(self.get_property("offset_lower"), 1.5)
         upper = _parse_float(self.get_property("offset_upper"), float("inf"))
-        amplitude = _legacy_distance_to_cells(_parse_float(self.get_property("offset_amplitude"), 150.0), dim)
+        amplitude = _distance_km_to_cells(
+            _parse_float(self.get_property("offset_amplitude"), 225.0),
+            self.context.get_terrain_size_km(),
+            dim,
+        )
         fbm_x = ConsistentFBMNoise(
             scale=scale,
             octaves=6,
@@ -1193,11 +1197,18 @@ class GaussianBlurNode(TerrainBaseNode):
         self.set_color(120, 100, 90)
         self.add_input("heightfield", color=(150, 200, 150))
         self.add_output("heightfield", color=(150, 200, 150))
-        self.add_text_input("sigma", "Sigma", text="2.5")
+        self.add_text_input("sigma", "Sigma (km)", text="3.75")
 
     def execute(self):
         source = self.get_input_heightfield("heightfield")
-        sigma = max(_legacy_distance_to_cells(_parse_float(self.get_property("sigma"), 0.0), source.array.shape[0]), 0.0)
+        sigma = max(
+            _distance_km_to_cells(
+                _parse_float(self.get_property("sigma"), 0.0),
+                self.context.get_terrain_size_km(),
+                source.array.shape[0],
+            ),
+            0.0,
+        )
         if sigma <= 0.0:
             payload = source.with_array(source.array.copy(), name=self._base_name)
         else:
@@ -1229,7 +1240,7 @@ class ConnectInlandSeasNode(TerrainBaseNode):
         self.add_text_input("sea_level", "Sea Level", text="0.0")
         self.add_text_input("min_lake_size", "Min Lake Size", text="30")
         self.add_text_input("carve_depth", "Carve Depth", text="0.1")
-        self.add_text_input("channel_width", "Channel Width", text="5.0")
+        self.add_text_input("channel_width", "Channel Width (km)", text="7.5")
         self.add_text_input("channel_falloff", "Channel Falloff", text="1.2")
         self.add_text_input("fill_height", "Fill Height", text="0.01")
 
@@ -1249,7 +1260,11 @@ class ConnectInlandSeasNode(TerrainBaseNode):
             min_sea_size=_legacy_area_to_pixels(_parse_int(self.get_property("min_lake_size"), 30), source.array.shape[0]),
             carve_depth=max(_parse_float(self.get_property("carve_depth"), 0.1), 0.0),
             channel_width=max(
-                _legacy_distance_to_cells(_parse_float(self.get_property("channel_width"), 5.0), source.array.shape[0]),
+                _distance_km_to_cells(
+                    _parse_float(self.get_property("channel_width"), 7.5),
+                    self.context.get_terrain_size_km(),
+                    source.array.shape[0],
+                ),
                 0.0,
             ),
             channel_falloff=max(_parse_float(self.get_property("channel_falloff"), 1.2), 0.05),

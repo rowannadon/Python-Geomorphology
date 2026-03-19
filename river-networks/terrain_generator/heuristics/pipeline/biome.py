@@ -287,8 +287,10 @@ def calculate_biome_scores(
     scores *= 1.0 + 1e-6
     return scores.astype(np.float32)
 
-def apply_probabilistic_mixing(scores: np.ndarray, mixing_radius: int = 2) -> np.ndarray:
+def apply_probabilistic_mixing(scores: np.ndarray, mixing_radius: float = 2.0) -> np.ndarray:
     """Smooth biome scores to create gentle ecotones."""
+    if mixing_radius <= 0.0:
+        return scores.astype(np.float32, copy=False)
     h, w, n_biomes = scores.shape
     smoothed = np.zeros_like(scores)
     for i in range(n_biomes):
@@ -401,7 +403,7 @@ def classify_biomes_advanced(
     lat_deg: np.ndarray,
     wind_u: np.ndarray,
     wind_v: np.ndarray,
-    mixing_radius: int = 3,
+    mixing_radius: float = 3.0,
     use_probabilistic: bool = False,
     return_membership: bool = False,
 ):

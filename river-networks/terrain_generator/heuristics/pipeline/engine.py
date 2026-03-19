@@ -111,7 +111,7 @@ class TerrainEngine(QObject):
             constant_wind_azimuth_deg=0.0,
             svf_dirs=16, svf_radius=100.0,
             tpi_radii=[25.0, 100.0],
-            biome_mixing=1, use_random_biomes=False,
+            biome_mixing=1.5, use_random_biomes=False,
             flowacc_texture=None,
             albedo_mode="physical",
             deposition_texture=None
@@ -387,11 +387,12 @@ class TerrainEngine(QObject):
         twi = self.get_twi()
         tpi = self.get_tpi(50.0)
         p = self.params
+        mixing_radius = max(float(p["biome_mixing"]) * 1000.0 / max(float(p["cellsize"]), 1e-6), 0.0)
         def _run():
             bid, brgb = classify_biomes_advanced(
                 self.elev, p["sea_level_m"], cl["temp_c"], cl["precip_mm"], cl["PET"], twi,
                 cl["slope_deg"], cl["aspect_deg"], tpi, cl["d2coast"], self.lat1d,
-                cl["u"], cl["v"], mixing_radius=p["biome_mixing"],
+                cl["u"], cl["v"], mixing_radius=mixing_radius,
                 use_probabilistic=p["use_random_biomes"]
             )
             return bid, brgb

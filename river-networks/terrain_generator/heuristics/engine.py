@@ -39,7 +39,7 @@ class HeuristicSettings:
     svf_dirs: int = 16
     svf_radius: float = 100.0
     tpi_radii: Tuple[float, float] = (25.0, 100.0)
-    biome_mixing: int = 1
+    biome_mixing: float = 1.5
     use_random_biomes: bool = False
     flowacc_texture: Optional[str] = None
     albedo_mode: str = "physical"

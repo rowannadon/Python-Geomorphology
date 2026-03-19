@@ -13,7 +13,7 @@ from ...config import RockLayerConfig, normalize_layer_inputs
 from ...core import RiverGenerator, TerrainGenerator, TerrainParameters, normalize
 from ...core.particle_erosion import ParticleErosion
 from ...core.utils import gaussian_gradient, render_triangulation
-from .base_nodes import TerrainBaseNode, _parse_float, _parse_int, _parse_points_text
+from .base_nodes import TerrainBaseNode, _distance_km_to_cells, _parse_float, _parse_int, _parse_points_text
 from .contracts import (
     HeightfieldData,
     MaskData,
@@ -117,7 +117,7 @@ class SampleTerrainGraphNode(TerrainBaseNode):
         self.add_input("heightfield", color=(150, 200, 150))
         self.add_input("land_mask", color=(120, 180, 120))
         self.add_output("terrain_graph", color=(180, 120, 200))
-        self.add_text_input("disc_radius", "Point Spacing", text="2.0")
+        self.add_text_input("disc_radius", "Point Spacing (km)", text="3.0")
         self.add_text_input("seed", "Seed", text="42")
 
     def execute(self):
@@ -129,7 +129,7 @@ class SampleTerrainGraphNode(TerrainBaseNode):
         generator = _make_generator(
             context=self.context,
             dimension=dim,
-            disc_radius=_parse_float(self.get_property("disc_radius"), 2.0),
+            disc_radius=_parse_float(self.get_property("disc_radius"), 3.0),
             seed=_parse_int(self.get_property("seed"), self.context.get_seed()),
         )
         shape = heightfield.array.shape
@@ -652,7 +652,7 @@ class ParticleErosionNode(TerrainBaseNode):
         self.add_text_input("erosion_evaporation", "Water Retention", text="0.98")
         self.add_text_input("erosion_gravity", "Gravity", text="10.0")
         self.add_text_input("erosion_max_lifetime", "Lifetime", text="60")
-        self.add_text_input("erosion_step_size", "Step Size", text="0.3")
+        self.add_text_input("erosion_step_size", "Step Size (km)", text="0.45")
         self.add_text_input("erosion_blur_iterations", "Blur Iterations", text="1")
         self.add_text_input("max_delta", "Max Delta", text="0.05")
 
@@ -669,7 +669,11 @@ class ParticleErosionNode(TerrainBaseNode):
             if rock_parameters:
                 generator = _make_generator(context=self.context, dimension=heightfield.shape[0])
                 erosion_maps = generator._build_parameter_maps(np.asarray(bundle.rock_map, dtype=np.int32), list(rock_parameters))
-        step_scale = float(heightfield.shape[0]) / TerrainGenerator.LEGACY_SCALE_RESOLUTION
+        step_size = _distance_km_to_cells(
+            _parse_float(self.get_property("erosion_step_size"), 0.45),
+            self.context.get_terrain_size_km(),
+            heightfield.shape[0],
+        )
         erosion = ParticleErosion(
             iterations=_parse_int(self.get_property("erosion_iterations"), 80000),
             inertia=_parse_float(self.get_property("erosion_inertia"), 0.3),
@@ -678,14 +682,15 @@ class ParticleErosionNode(TerrainBaseNode):
             erosion_const=_parse_float(self.get_property("erosion_rate"), 0.4),
             evaporation_const=_parse_float(self.get_property("erosion_evaporation"), 0.98),
             gravity=_parse_float(self.get_property("erosion_gravity"), 10.0),
-            max_lifetime=max(1, int(round(_parse_int(self.get_property("erosion_max_lifetime"), 60) / max(step_scale, 1e-6)))),
-            step_size=_parse_float(self.get_property("erosion_step_size"), 0.3) * step_scale,
+            max_lifetime=max(1, _parse_int(self.get_property("erosion_max_lifetime"), 60)),
+            step_size=step_size,
             max_delta=_parse_float(self.get_property("max_delta"), 0.05),
             blur_iterations=_parse_int(self.get_property("erosion_blur_iterations"), 1),
         )
         if erosion_maps and "erosion_step_size" in erosion_maps:
+            terrain_cells_per_km = heightfield.shape[0] / max(self.context.get_terrain_size_km(), 1e-9)
             erosion_maps["erosion_step_size"] = np.ascontiguousarray(
-                np.asarray(erosion_maps["erosion_step_size"], dtype=np.float64) * step_scale
+                np.maximum(np.asarray(erosion_maps["erosion_step_size"], dtype=np.float64), 0.0) * terrain_cells_per_km
             )
         normalized_terrain = np.asarray(heightfield / max_height, dtype=np.float32)
 
