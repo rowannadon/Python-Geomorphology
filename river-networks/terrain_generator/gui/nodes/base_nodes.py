@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path, PureWindowsPath
 from typing import Any, Dict, Optional, Sequence, Tuple
@@ -9,6 +10,20 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import numpy as np
 from NodeGraphQt import BaseNode
 from NodeGraphQt.constants import NodePropWidgetEnum
+try:
+    from numba import njit, prange
+    _NUMBA = True
+except Exception:
+    _NUMBA = False
+
+    def njit(*args, **kwargs):
+        def wrap(f):
+            return f
+        return wrap
+
+    def prange(*args):
+        return range(*args)
+
 from PyQt5.QtCore import QObject, pyqtSignal
 
 from ...core import ConsistentFBMNoise, gaussian_blur
@@ -36,6 +51,164 @@ from .contracts import (
     port_type_for_payload,
 )
 from .custom_node_view import CustomNodeItem
+
+
+@njit(cache=True)
+def _finite_min_max_2d(src: np.ndarray) -> tuple[float, float]:
+    h, w = src.shape
+    min_value = np.inf
+    max_value = -np.inf
+    for y in range(h):
+        for x in range(w):
+            value = src[y, x]
+            if value < min_value:
+                min_value = value
+            if value > max_value:
+                max_value = value
+    return min_value, max_value
+
+
+@njit(cache=True, parallel=True, fastmath=True)
+def _domain_warp_sample_numba(src: np.ndarray, off_x: np.ndarray, off_y: np.ndarray, out: np.ndarray):
+    h, w = src.shape
+    for y in prange(h):
+        for x in range(w):
+            fx = x - off_x[y, x]
+            fy = y - off_y[y, x]
+
+            fx_floor = np.floor(fx)
+            fy_floor = np.floor(fy)
+
+            x0 = int(fx_floor) % w
+            y0 = int(fy_floor) % h
+            x1 = (x0 + 1) % w
+            y1 = (y0 + 1) % h
+
+            tx = fx - fx_floor
+            ty = fy - fy_floor
+
+            s00 = src[y0, x0]
+            s10 = src[y0, x1]
+            s01 = src[y1, x0]
+            s11 = src[y1, x1]
+
+            a0 = s00 + (s10 - s00) * tx
+            a1 = s01 + (s11 - s01) * tx
+            out[y, x] = a0 + (a1 - a0) * ty
+
+
+@njit(cache=True, parallel=True, fastmath=True)
+def _threshold_flood_numba(src: np.ndarray, sea_level: float, flooded: np.ndarray, land_mask: np.ndarray):
+    h, w = src.shape
+    for y in prange(h):
+        for x in range(w):
+            value = src[y, x] - sea_level
+            if value > 0.0:
+                flooded[y, x] = value
+                land_mask[y, x] = value > 0.001
+            else:
+                flooded[y, x] = 0.0
+                land_mask[y, x] = False
+
+
+@njit(cache=True, parallel=True, fastmath=True)
+def _land_mask_numba(src: np.ndarray, sea_level: float, out: np.ndarray):
+    h, w = src.shape
+    for y in prange(h):
+        for x in range(w):
+            out[y, x] = src[y, x] > sea_level
+
+
+@njit(cache=True, parallel=True, fastmath=True)
+def _invert_normalized_numba(src: np.ndarray, out: np.ndarray):
+    h, w = src.shape
+    for y in prange(h):
+        for x in range(w):
+            out[y, x] = 1.0 - src[y, x]
+
+
+@njit(cache=True, parallel=True, fastmath=True)
+def _invert_range_numba(src: np.ndarray, min_value: float, max_value: float, out: np.ndarray):
+    h, w = src.shape
+    for y in prange(h):
+        for x in range(w):
+            out[y, x] = max_value - src[y, x] + min_value
+
+
+@njit(cache=True, parallel=True, fastmath=True)
+def _normalize_or_clamp_numba(src: np.ndarray,
+                              clamp_mode: bool,
+                              clamp_min: float,
+                              clamp_max: float,
+                              out: np.ndarray):
+    h, w = src.shape
+    if clamp_mode:
+        for y in prange(h):
+            for x in range(w):
+                value = src[y, x]
+                if value < clamp_min:
+                    value = clamp_min
+                elif value > clamp_max:
+                    value = clamp_max
+                out[y, x] = value
+        return
+
+    min_value, max_value = _finite_min_max_2d(src)
+    if max_value <= min_value:
+        for y in prange(h):
+            for x in range(w):
+                out[y, x] = 0.0
+        return
+
+    scale = 1.0 / (max_value - min_value)
+    for y in prange(h):
+        for x in range(w):
+            out[y, x] = (src[y, x] - min_value) * scale
+
+
+@njit(cache=True, parallel=True, fastmath=True)
+def _combine_heightfields_numba(a: np.ndarray,
+                                b: np.ndarray,
+                                mask: np.ndarray,
+                                op_code: int,
+                                fade: float,
+                                smooth: float,
+                                eps: float,
+                                out: np.ndarray):
+    h, w = a.shape
+    for y in prange(h):
+        for x in range(w):
+            av = a[y, x]
+            bv = b[y, x]
+
+            if op_code == 0:
+                combined = (1.0 - fade) * av + fade * bv
+            elif op_code == 1:
+                combined = av + bv
+            elif op_code == 2:
+                combined = av - bv
+            elif op_code == 3:
+                combined = av * bv
+            elif op_code == 4:
+                safe = bv
+                if abs(safe) < eps:
+                    safe = eps if safe >= 0.0 else -eps
+                combined = av / safe
+            elif op_code == 5:
+                lhs = smooth * av
+                rhs = smooth * bv
+                mx = lhs if lhs > rhs else rhs
+                combined = (mx + math.log(math.exp(lhs - mx) + math.exp(rhs - mx))) / smooth
+            elif op_code == 6:
+                lhs = -smooth * av
+                rhs = -smooth * bv
+                mx = lhs if lhs > rhs else rhs
+                combined = -(mx + math.log(math.exp(lhs - mx) + math.exp(rhs - mx))) / smooth
+            else:
+                base = av if av > 1e-6 else 1e-6
+                combined = math.pow(base, bv)
+
+            out[y, x] = av + mask[y, x] * (combined - av)
 
 
 def _parse_float(value: Any, default: float = 0.0) -> float:
@@ -765,30 +938,62 @@ class CombineNode(TerrainBaseNode):
         else:
             mask = np.ones_like(a, dtype=np.float32)
         operation = str(self.get_property("operation") or "Fade").strip().lower()
-        if operation == "fade":
+        if _NUMBA:
+            operation_map = {
+                "fade": 0,
+                "add": 1,
+                "subtract": 2,
+                "multiply": 3,
+                "divide": 4,
+                "smooth max": 5,
+                "smooth min": 6,
+                "pow": 7,
+            }
+            op_code = operation_map.get(operation)
+            if op_code is None:
+                raise ValueError(f"Unsupported combine operation '{operation}'.")
+            result = np.empty_like(a, dtype=np.float32)
+            _combine_heightfields_numba(
+                np.ascontiguousarray(a),
+                np.ascontiguousarray(b),
+                np.ascontiguousarray(mask.astype(np.float32, copy=False)),
+                op_code,
+                np.clip(_parse_float(self.get_property("fade_amount"), 0.5), 0.0, 1.0),
+                max(abs(_parse_float(self.get_property("smoothness"), 5.0)), 1e-6),
+                max(abs(_parse_float(self.get_property("divide_epsilon"), 1e-5)), 1e-6),
+                result,
+            )
+        elif operation == "fade":
             fade = np.clip(_parse_float(self.get_property("fade_amount"), 0.5), 0.0, 1.0)
             combined = (1.0 - fade) * a + fade * b
+            result = a + mask * (combined - a)
         elif operation == "add":
             combined = a + b
+            result = a + mask * (combined - a)
         elif operation == "subtract":
             combined = a - b
+            result = a + mask * (combined - a)
         elif operation == "multiply":
             combined = a * b
+            result = a + mask * (combined - a)
         elif operation == "divide":
             eps = max(abs(_parse_float(self.get_property("divide_epsilon"), 1e-5)), 1e-6)
             safe = np.where(np.abs(b) < eps, np.sign(b + eps) * eps, b)
             combined = a / safe
+            result = a + mask * (combined - a)
         elif operation == "smooth max":
             smooth = max(abs(_parse_float(self.get_property("smoothness"), 5.0)), 1e-6)
             combined = np.logaddexp(smooth * a, smooth * b) / smooth
+            result = a + mask * (combined - a)
         elif operation == "smooth min":
             smooth = max(abs(_parse_float(self.get_property("smoothness"), 5.0)), 1e-6)
             combined = -np.logaddexp(-smooth * a, -smooth * b) / smooth
+            result = a + mask * (combined - a)
         elif operation == "pow":
             combined = np.power(np.clip(a, 1e-6, None), b)
+            result = a + mask * (combined - a)
         else:
             raise ValueError(f"Unsupported combine operation '{operation}'.")
-        result = a + mask * (combined - a)
         payload = a_data.with_array(result.astype(np.float32), name=self._base_name)
         self.set_output_data(payload)
         return payload
@@ -814,6 +1019,13 @@ class DomainWarpNode(TerrainBaseNode):
 
     @staticmethod
     def _sample(array: np.ndarray, offset: np.ndarray) -> np.ndarray:
+        if _NUMBA:
+            src = np.ascontiguousarray(array.astype(np.float32, copy=False))
+            off_x = np.ascontiguousarray(np.asarray(offset.real, dtype=np.float32))
+            off_y = np.ascontiguousarray(np.asarray(offset.imag, dtype=np.float32))
+            out = np.empty_like(src)
+            _domain_warp_sample_numba(src, off_x, off_y, out)
+            return out
         shape = np.array(array.shape)
         delta = np.array((offset.real, offset.imag))
         coords = np.array(np.meshgrid(*map(range, shape), indexing="ij")) - delta
@@ -926,8 +1138,18 @@ class ThresholdFloodNode(TerrainBaseNode):
     def execute(self):
         source = self.get_input_heightfield("heightfield")
         sea_level = _parse_float(self.get_property("sea_level"), 0.0)
-        flooded = np.where(source.array > sea_level, source.array - sea_level, 0.0).astype(np.float32)
-        land_mask = flooded > 0.001
+        if _NUMBA:
+            flooded = np.empty_like(source.array, dtype=np.float32)
+            land_mask = np.empty(source.array.shape, dtype=np.bool_)
+            _threshold_flood_numba(
+                np.ascontiguousarray(source.array.astype(np.float32, copy=False)),
+                sea_level,
+                flooded,
+                land_mask,
+            )
+        else:
+            flooded = np.where(source.array > sea_level, source.array - sea_level, 0.0).astype(np.float32)
+            land_mask = flooded > 0.001
         payload = source.with_array(flooded, name=self._base_name)
         mask = MaskData(array=land_mask, name=f"{self._base_name} Mask")
         self.set_output_data({"heightfield": payload, "land_mask": mask})
@@ -1026,8 +1248,15 @@ class InvertNode(TerrainBaseNode):
     def execute(self):
         source = self.get_input_heightfield("heightfield")
         mode = str(self.get_property("mode") or "Normalized (1 - x)")
-        array = source.array.astype(np.float32)
-        if "Normalized" in mode:
+        array = source.array.astype(np.float32, copy=False)
+        if _NUMBA and "Normalized" in mode:
+            result = np.empty_like(array, dtype=np.float32)
+            _invert_normalized_numba(np.ascontiguousarray(array), result)
+        elif _NUMBA:
+            result = np.empty_like(array, dtype=np.float32)
+            min_value, max_value = _finite_min_max_2d(np.ascontiguousarray(array))
+            _invert_range_numba(np.ascontiguousarray(array), min_value, max_value, result)
+        elif "Normalized" in mode:
             result = 1.0 - array
         else:
             min_value = float(array.min())
@@ -1057,9 +1286,18 @@ class NormalizeClampNode(TerrainBaseNode):
 
     def execute(self):
         source = self.get_input_heightfield("heightfield")
-        array = source.array.astype(np.float32)
+        array = source.array.astype(np.float32, copy=False)
         mode = str(self.get_property("mode") or "Normalize")
-        if mode == "Clamp":
+        if _NUMBA:
+            out = np.empty_like(array, dtype=np.float32)
+            _normalize_or_clamp_numba(
+                np.ascontiguousarray(array),
+                mode == "Clamp",
+                _parse_float(self.get_property("clamp_min"), 0.0),
+                _parse_float(self.get_property("clamp_max"), 1.0),
+                out,
+            )
+        elif mode == "Clamp":
             out = np.clip(array, _parse_float(self.get_property("clamp_min"), 0.0), _parse_float(self.get_property("clamp_max"), 1.0))
         else:
             min_value = float(array.min())
@@ -1090,6 +1328,15 @@ class LandMaskNode(TerrainBaseNode):
     def execute(self):
         source = self.get_input_heightfield("heightfield")
         sea_level = _parse_float(self.get_property("sea_level"), 0.0)
-        mask = MaskData(array=np.asarray(source.array > sea_level, dtype=bool), name=self._base_name)
+        if _NUMBA:
+            mask_array = np.empty(source.array.shape, dtype=np.bool_)
+            _land_mask_numba(
+                np.ascontiguousarray(source.array.astype(np.float32, copy=False)),
+                sea_level,
+                mask_array,
+            )
+        else:
+            mask_array = np.asarray(source.array > sea_level, dtype=bool)
+        mask = MaskData(array=mask_array, name=self._base_name)
         self.set_output_data(mask)
         return mask

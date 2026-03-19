@@ -5,6 +5,20 @@ from numba import njit, prange
 from typing import Dict, Tuple, Optional
 from scipy.ndimage import gaussian_filter
 
+
+@njit(cache=True)
+def _sample_cdf_index(cdf: np.ndarray, value: float) -> int:
+    """Locate ``value`` in a monotonically increasing CDF."""
+    lo = 0
+    hi = cdf.size - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if value <= cdf[mid]:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+
 @njit(cache=True)
 def bilinear_interpolate(heightmap: np.ndarray, x: float, y: float) -> float:
     """Bilinear interpolation of heightmap at position (x, y)."""
@@ -226,6 +240,88 @@ def simulate_single_droplet(heightmap: np.ndarray,
 
     return total_change
 
+
+@njit(cache=True)
+def _simulate_droplet_batch(heightmap: np.ndarray,
+                            spawn_cdf: np.ndarray,
+                            inertia_map: np.ndarray,
+                            capacity_map: np.ndarray,
+                            deposition_map: np.ndarray,
+                            erosion_map: np.ndarray,
+                            evaporation_map: np.ndarray,
+                            gravity_map: np.ndarray,
+                            step_map: np.ndarray,
+                            max_delta_map: np.ndarray,
+                            droplet_count: int,
+                            max_steps: int,
+                            min_slope: float):
+    """Simulate a batch of droplets entirely inside compiled code."""
+    h, w = heightmap.shape
+    total_cells = h * w
+    for _ in range(droplet_count):
+        idx = _sample_cdf_index(spawn_cdf, np.random.random())
+        if idx >= total_cells:
+            idx = total_cells - 1
+        y_start = float(idx // w) + (np.random.random() - 0.5)
+        x_start = float(idx % w) + (np.random.random() - 0.5)
+        simulate_single_droplet(
+            heightmap,
+            x_start,
+            y_start,
+            inertia_map,
+            capacity_map,
+            deposition_map,
+            erosion_map,
+            evaporation_map,
+            gravity_map,
+            step_map,
+            max_delta_map,
+            max_steps,
+            min_slope,
+        )
+
+
+@njit(cache=True)
+def _compute_flow_accumulation_numba(heightmap: np.ndarray) -> np.ndarray:
+    """Simple D8-style flow accumulation used to bias droplet spawning."""
+    h, w = heightmap.shape
+    flow = np.zeros_like(heightmap, dtype=np.float64)
+    flat = heightmap.reshape(h * w)
+    indices = np.argsort(-flat)
+
+    for idx_pos in range(indices.size):
+        idx = indices[idx_pos]
+        y = idx // w
+        x = idx % w
+
+        if heightmap[y, x] <= 0.001:
+            continue
+
+        min_h = heightmap[y, x]
+        min_y = y
+        min_x = x
+
+        for dy in range(-1, 2):
+            ny = y + dy
+            if ny < 0 or ny >= h:
+                continue
+            for dx in range(-1, 2):
+                nx = x + dx
+                if dx == 0 and dy == 0:
+                    continue
+                if nx < 0 or nx >= w:
+                    continue
+                neighbor_h = heightmap[ny, nx]
+                if neighbor_h < min_h:
+                    min_h = neighbor_h
+                    min_y = ny
+                    min_x = nx
+
+        if min_x != x or min_y != y:
+            flow[min_y, min_x] += flow[y, x] + 1.0
+
+    return flow
+
 class ParticleErosion:
     """Improved particle-based erosion simulation."""
     
@@ -268,9 +364,6 @@ class ParticleErosion:
         eroded = heightmap.copy().astype(np.float64)
         initial_height = eroded.copy()
 
-        # Track initial ocean areas (but don't restrict erosion to land)
-        initial_ocean_mask = initial_height <= 0.001
-        
         # Pre-compute flow accumulation for weighted spawn points
         flow_acc = self._compute_flow_accumulation(eroded)
         
@@ -292,9 +385,15 @@ class ParticleErosion:
         else:
             spawn_prob = np.ones_like(spawn_prob) / spawn_prob.size
         
-        # Flatten for random sampling
-        spawn_prob_flat = spawn_prob.flatten()
+        # Flatten once and build a CDF so compiled batches can sample directly.
         total_cells = h * w
+        spawn_prob_flat = np.ascontiguousarray(spawn_prob.reshape(-1).astype(np.float64, copy=False))
+        spawn_cdf = np.cumsum(spawn_prob_flat, dtype=np.float64)
+        if spawn_cdf.size == 0 or spawn_cdf[-1] <= 0.0:
+            spawn_cdf = np.linspace(1.0 / total_cells, 1.0, total_cells, dtype=np.float64)
+        else:
+            spawn_cdf /= spawn_cdf[-1]
+            spawn_cdf[-1] = 1.0
         
         # Prepare per-cell parameter maps (fallback to uniform values)
         maps = parameter_maps or {}
@@ -318,41 +417,51 @@ class ParticleErosion:
         step_map = prepare_map('erosion_step_size', self.step_size)
         max_delta_map = prepare_map('max_delta', self.max_delta)
 
-        # Simulate many droplets
-        batch_size = 1000
-        num_batches = self.iterations // batch_size
+        # Simulate many droplets in compiled batches to avoid Python call overhead.
+        batch_size = min(1000, max(self.iterations, 1))
+        num_batches, remainder = divmod(self.iterations, batch_size)
+        progress_denominator = max(num_batches + (1 if remainder else 0), 1)
 
         for batch_idx in range(num_batches):
             if progress_callback and batch_idx % 10 == 0:
-                progress = int(70 + (batch_idx / num_batches) * 20)
+                progress = int(70 + (batch_idx / progress_denominator) * 20)
                 progress_callback(progress, f"Erosion: {batch_idx * batch_size}/{self.iterations} droplets...")
-            
-            # Sample starting positions
-            indices = np.random.choice(total_cells, batch_size, p=spawn_prob_flat)
-            
-            for idx in indices:
-                y_start = idx // w
-                x_start = idx % w
-                
-                # Add small random offset within cell
-                x_start += np.random.random() - 0.5
-                y_start += np.random.random() - 0.5
-                
-                # Simulate droplet
-                simulate_single_droplet(
-                    eroded,
-                    x_start, y_start,
-                    inertia_map,
-                    capacity_map,
-                    deposition_map,
-                    erosion_map,
-                    evaporation_map,
-                    gravity_map,
-                    step_map,
-                    max_delta_map,
-                    self.max_lifetime,
-                    self.min_slope
-                )
+
+            _simulate_droplet_batch(
+                eroded,
+                spawn_cdf,
+                inertia_map,
+                capacity_map,
+                deposition_map,
+                erosion_map,
+                evaporation_map,
+                gravity_map,
+                step_map,
+                max_delta_map,
+                batch_size,
+                self.max_lifetime,
+                self.min_slope,
+            )
+
+        if remainder:
+            if progress_callback:
+                progress = int(70 + (num_batches / progress_denominator) * 20)
+                progress_callback(progress, f"Erosion: {num_batches * batch_size}/{self.iterations} droplets...")
+            _simulate_droplet_batch(
+                eroded,
+                spawn_cdf,
+                inertia_map,
+                capacity_map,
+                deposition_map,
+                erosion_map,
+                evaporation_map,
+                gravity_map,
+                step_map,
+                max_delta_map,
+                remainder,
+                self.max_lifetime,
+                self.min_slope,
+            )
         
         # Post-processing: smooth to reduce noise while preserving features
         if self.blur_iterations > 0:
@@ -379,36 +488,4 @@ class ParticleErosion:
         """
         Simple flow accumulation to identify natural drainage paths.
         """
-        h, w = heightmap.shape
-        flow = np.zeros_like(heightmap)
-        
-        # Sort cells by height (highest first)
-        indices = np.argsort(-heightmap.flatten())
-        
-        for idx in indices:
-            y = idx // w
-            x = idx % w
-            
-            if heightmap[y, x] <= 0.001:  # Skip ocean
-                continue
-            
-            # Find lowest neighbor
-            min_h = heightmap[y, x]
-            min_dx, min_dy = 0, 0
-            
-            for dy in [-1, 0, 1]:
-                for dx in [-1, 0, 1]:
-                    if dy == 0 and dx == 0:
-                        continue
-                    ny, nx = y + dy, x + dx
-                    if 0 <= ny < h and 0 <= nx < w:
-                        if heightmap[ny, nx] < min_h:
-                            min_h = heightmap[ny, nx]
-                            min_dy, min_dx = dy, dx
-            
-            # Accumulate flow
-            if min_dx != 0 or min_dy != 0:
-                ny, nx = y + min_dy, x + min_dx
-                flow[ny, nx] += flow[y, x] + 1.0
-        
-        return flow
+        return _compute_flow_accumulation_numba(np.asarray(heightmap, dtype=np.float64))

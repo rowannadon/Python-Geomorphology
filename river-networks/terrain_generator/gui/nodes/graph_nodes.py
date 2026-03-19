@@ -383,7 +383,7 @@ class ComputeRiverNetworkNode(TerrainBaseNode):
         self.emit_progress(0.2, "Computing river flow directions")
         network = river_generator.compute_network(
             graph.points,
-            [list(item) for item in graph.neighbors],
+            list(graph.neighbors),
             normalized_heights,
             np.asarray(graph.sampled_land_mask, dtype=bool),
         )

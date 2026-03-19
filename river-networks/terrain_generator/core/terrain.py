@@ -125,6 +125,39 @@ def _variable_max_delta_kernel(points_height, terrace_count, terrace_thickness,
         s = terrace_strength[i]
         out[i] = base_max_delta + (terrace_delta - base_max_delta) * s
 
+
+@njit(cache=True, parallel=True)
+def _map_layer_parameters_numba(rock_assignments, layer_max_delta, layer_downcut,
+                                default_max_delta, default_downcut,
+                                node_max_delta, downcut_power):
+    n = rock_assignments.size
+    last = layer_max_delta.size - 1
+    if last < 0:
+        for i in prange(n):
+            node_max_delta[i] = default_max_delta
+            downcut_power[i] = default_downcut
+        return
+
+    for i in prange(n):
+        layer_idx = rock_assignments[i]
+        if layer_idx < 0:
+            layer_idx = 0
+        elif layer_idx > last:
+            layer_idx = last
+        node_max_delta[i] = layer_max_delta[layer_idx]
+        downcut_power[i] = layer_downcut[layer_idx]
+
+
+@njit(cache=True, parallel=True)
+def _build_upstream_edge_mask_numba(downstream, indptr, indices, out):
+    n = indptr.size - 1
+    for src in prange(n):
+        start = indptr[src]
+        end = indptr[src + 1]
+        for e in range(start, end):
+            dst = indices[e]
+            out[e] = downstream[dst] == src
+
 @dataclass
 class TerrainParameters:
     """Parameters for terrain generation."""
@@ -901,38 +934,53 @@ class TerrainGenerator:
         downcut_power = np.full(dim, float(self.params.river_downcutting), dtype=np.float64)
 
         if rock_assignments is not None and rock_parameters:
-            # Map per-node parameters from assigned layer
-            # (use dst's layer for both parameters, consistent with your original code)
-            for dst in range(dim):
-                layer_idx = int(rock_assignments[dst])
-                if layer_idx < 0: layer_idx = 0
-                if layer_idx >= len(rock_parameters): layer_idx = len(rock_parameters)-1
-                layer_params = rock_parameters[layer_idx]
-                node_max_delta[dst] = float(layer_params.get('max_delta', self.params.max_delta))
-                downcut_power[dst] = float(layer_params.get('river_downcutting', self.params.river_downcutting))
+            layer_max_delta = np.asarray(
+                [float(layer.get('max_delta', self.params.max_delta)) for layer in rock_parameters],
+                dtype=np.float64,
+            )
+            layer_downcut = np.asarray(
+                [float(layer.get('river_downcutting', self.params.river_downcutting)) for layer in rock_parameters],
+                dtype=np.float64,
+            )
+            if _NUMBA:
+                _map_layer_parameters_numba(
+                    np.asarray(rock_assignments, dtype=np.int32),
+                    layer_max_delta,
+                    layer_downcut,
+                    float(self.params.max_delta),
+                    float(self.params.river_downcutting),
+                    node_max_delta,
+                    downcut_power,
+                )
+            else:
+                clipped = np.clip(np.asarray(rock_assignments, dtype=np.int32), 0, len(layer_max_delta) - 1)
+                node_max_delta = layer_max_delta[clipped]
+                downcut_power = layer_downcut[clipped]
 
         # Apply variable max delta (min with per-node)
         if variable_max_delta is not None:
             np.minimum(node_max_delta, variable_max_delta, out=node_max_delta)
 
-        # Precompute upstream mask per edge (True if (src->dst) lies along upstream list)
+        # Precompute upstream mask per edge using downstream links.
+        downstream_raw = river_network.downstream
+        if isinstance(downstream_raw, np.ndarray):
+            downstream = np.asarray(downstream_raw, dtype=np.int32)
+        else:
+            downstream = np.asarray(
+                [-1 if item is None else int(item) for item in downstream_raw],
+                dtype=np.int32,
+            )
         upstream_mask = np.zeros(indices.size, dtype=np.bool_)
-        # upstream likely is a list[set] or list[list] indexed by src
-        for src in range(dim):
-            ups = river_network.upstream[src]
-            if ups is None:
-                continue
-            start = indptr[src]
-            end = indptr[src + 1]
-            if hasattr(ups, "__contains__"):
-                # set or list — membership test
-                for e in range(start, end):
-                    upstream_mask[e] = (indices[e] in ups)
-            else:
-                # fallback: build a set
-                ups_set = set(ups)
-                for e in range(start, end):
-                    upstream_mask[e] = (indices[e] in ups_set)
+        if _NUMBA:
+            _build_upstream_edge_mask_numba(
+                downstream,
+                indptr.astype(np.int32, copy=False),
+                indices.astype(np.int32, copy=False),
+                upstream_mask,
+            )
+        else:
+            row_indices = np.repeat(np.arange(dim, dtype=np.int32), np.diff(indptr))
+            upstream_mask = downstream[indices] == row_indices
 
         # Compute edge costs in parallel
         if _NUMBA:

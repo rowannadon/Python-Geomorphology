@@ -154,6 +154,15 @@ class RiverNetworkData(NodePayload):
     point_land_mask: Optional[np.ndarray] = None
 
     def __post_init__(self):
+        downstream = self.downstream
+        if isinstance(downstream, np.ndarray):
+            downstream_arr = np.asarray(downstream, dtype=np.int32)
+        else:
+            downstream_arr = np.asarray(
+                [-1 if item is None else int(item) for item in downstream],
+                dtype=np.int32,
+            )
+        object.__setattr__(self, "downstream", np.ascontiguousarray(downstream_arr))
         object.__setattr__(self, "volume", np.ascontiguousarray(np.asarray(self.volume, dtype=np.float32)))
         object.__setattr__(self, "watershed", np.ascontiguousarray(np.asarray(self.watershed, dtype=np.int32)))
         if self.point_land_mask is not None:
