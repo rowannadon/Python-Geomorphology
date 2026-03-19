@@ -232,13 +232,15 @@ class HeuristicMapNode(TerrainBaseNode):
         selection_key = _selection_for_spec(spec, radius_m)
         flow_override, deposition_map, rock_map, rock_types, rock_colors = self._resolve_optional_maps(bundle)
         cache_key = self._cache_key(spec, selection_key, heightfield, settings, dependency_overlays, flow_override, deposition_map, rock_map)
-        if cache_key in self.context.heuristic_cache:
-            return self.context.heuristic_cache[cache_key]
+        cached_overlay = self.context.get_cached_heuristic(cache_key)
+        if cached_overlay is not None:
+            return cached_overlay
 
         engine = HeuristicEngine()
         engine_settings = HeuristicSettings(**settings)
         self.emit_progress(0.15, f"Preparing {spec.node_name}")
         engine.prepare(heightfield.array, engine_settings)
+        self.check_cancelled()
         self._seed_engine_from_dependencies(engine, dependency_overlays)
         if flow_override is not None:
             engine.qt_engine.cache["acc"] = np.asarray(flow_override, dtype=np.float32).copy()
@@ -248,7 +250,8 @@ class HeuristicMapNode(TerrainBaseNode):
         if spec.needs_rock_map and rock_map is not None:
             engine.inject_rock_map(rock_map, rock_types, rock_colors)
         self.emit_progress(0.5, f"Computing {spec.node_name}")
-        images, arrays = engine.compute([selection_key])
+        images, arrays = engine.compute([selection_key], cancel_callback=self.is_cancelled)
+        self.check_cancelled()
         if spec.array_key not in arrays:
             raise ValueError(f"Heuristic result '{spec.array_key}' missing for {spec.node_name}.")
         rgba = qimage_to_rgba(images[spec.image_key])
@@ -274,7 +277,8 @@ class HeuristicMapNode(TerrainBaseNode):
                 "source_settings": dict(settings),
             },
         )
-        self.context.heuristic_cache[cache_key] = overlay
+        self.check_cancelled()
+        self.context.set_cached_heuristic(cache_key, overlay)
         return overlay
 
     def execute(self):

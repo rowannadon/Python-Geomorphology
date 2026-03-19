@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from collections import defaultdict, deque
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Type
 
@@ -18,6 +20,7 @@ from PyQt5.QtGui import QContextMenuEvent
 from PyQt5.QtWidgets import (
     QApplication,
     QFileDialog,
+    QGraphicsView,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -33,6 +36,7 @@ from PyQt5.QtWidgets import (
 
 from ..io import TerrainExporter
 from ..visualization import TerrainViewport
+from .nodes.context import ExecutionCancellationToken, NodeExecutionCancelled
 from .nodes import (
     AETHeuristicNode,
     AlbedoHeuristicNode,
@@ -255,44 +259,135 @@ class MacFriendlyNodeViewer(NodeViewer):
 
 
 class GraphExecutionThread(QThread):
-    """Execute a node and its dirty dependencies off the UI thread."""
+    """Execute a node graph in the background and parallelize ready branches."""
 
     started_node = pyqtSignal(object)
     finished_node = pyqtSignal(object, float)
     failed_node = pyqtSignal(object, str)
     completed = pyqtSignal(object, object)
+    cancelled = pyqtSignal(object)
 
-    def __init__(self, root_node):
+    def __init__(self, root_node, max_workers: Optional[int] = None):
         super().__init__()
         self.root_node = root_node
+        self.max_workers = max_workers or max(1, os.cpu_count() or 1)
+        self._cancel_token = ExecutionCancellationToken()
+
+    def request_cancel(self):
+        self._cancel_token.cancel()
 
     def run(self):
+        executor: Optional[ThreadPoolExecutor] = None
         try:
-            payload = self._execute_node(self.root_node, set())
-            self.completed.emit(self.root_node, payload)
-        except Exception as exc:
-            self.failed_node.emit(self.root_node, str(exc))
+            dependency_map = self._build_dependency_map(self.root_node, set(), {})
+            executable_nodes = {
+                node for node in dependency_map
+                if isinstance(node, TerrainBaseNode)
+                and (node._is_dirty or node.get_output_data() is None)
+            }
+            if not executable_nodes:
+                self._cancel_token.raise_if_cancelled()
+                payload = self.root_node.get_visualization_payload()
+                self.completed.emit(self.root_node, payload)
+                return
 
-    def _execute_node(self, node, visiting):
+            dependent_map = defaultdict(list)
+            pending_counts = {}
+            for node, dependencies in dependency_map.items():
+                if node not in executable_nodes:
+                    continue
+                pending_count = 0
+                for dependency in dependencies:
+                    if dependency in executable_nodes:
+                        pending_count += 1
+                        dependent_map[dependency].append(node)
+                pending_counts[node] = pending_count
+
+            ready = deque(node for node, pending in pending_counts.items() if pending == 0)
+            future_to_node = {}
+            max_workers = min(max(1, self.max_workers), max(1, len(executable_nodes)))
+            executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="terrain-node")
+
+            while ready or future_to_node:
+                self._cancel_token.raise_if_cancelled()
+                while ready and len(future_to_node) < max_workers and not self._cancel_token.is_cancelled():
+                    node = ready.popleft()
+                    future_to_node[executor.submit(self._execute_single_node, node)] = node
+                if not future_to_node:
+                    break
+                done, _pending = wait(tuple(future_to_node.keys()), timeout=0.1, return_when=FIRST_COMPLETED)
+                if not done:
+                    continue
+                for future in done:
+                    node = future_to_node.pop(future)
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        if self._is_cancellation_exception(exc):
+                            self._cancel_token.cancel()
+                            raise NodeExecutionCancelled("Execution cancelled.") from exc
+                        self._cancel_token.cancel()
+                        self.failed_node.emit(node, str(exc))
+                        return
+                    for downstream_node in dependent_map.get(node, ()):
+                        pending_counts[downstream_node] -= 1
+                        if pending_counts[downstream_node] == 0:
+                            ready.append(downstream_node)
+
+            self._cancel_token.raise_if_cancelled()
+            payload = self.root_node.get_visualization_payload()
+            self.completed.emit(self.root_node, payload)
+        except NodeExecutionCancelled:
+            self.cancelled.emit(self.root_node)
+        except Exception as exc:
+            if self._cancel_token.is_cancelled():
+                self.cancelled.emit(self.root_node)
+            else:
+                self.failed_node.emit(self.root_node, str(exc))
+        finally:
+            if executor is not None:
+                executor.shutdown(wait=True, cancel_futures=True)
+
+    def _build_dependency_map(self, node, visiting, collected):
         if node in visiting:
             raise RuntimeError(f"Cycle detected while executing '{node.name()}'.")
+        if node in collected:
+            return collected
         visiting.add(node)
+        dependencies = []
         if hasattr(node, "input_ports"):
             for input_port in node.input_ports():
                 for connected_port in input_port.connected_ports():
                     upstream_node = connected_port.node()
                     if isinstance(upstream_node, TerrainBaseNode):
-                        if upstream_node._is_dirty or upstream_node.get_output_data() is None:
-                            self._execute_node(upstream_node, visiting)
+                        self._build_dependency_map(upstream_node, visiting, collected)
+                        dependencies.append(upstream_node)
         visiting.remove(node)
-        if isinstance(node, TerrainBaseNode) and (not node._is_dirty and node.get_output_data() is not None):
-            return node.get_visualization_payload()
+        collected[node] = tuple(dict.fromkeys(dependencies))
+        return collected
+
+    def _execute_single_node(self, node):
+        self._cancel_token.raise_if_cancelled()
+        if not isinstance(node, TerrainBaseNode):
+            return
+        if not node._is_dirty and node.get_output_data() is not None:
+            return
         self.started_node.emit(node)
         start = time.time()
-        node.execute()
+        node.bind_execution_token(self._cancel_token)
+        try:
+            node.check_cancelled()
+            node.execute()
+            node.check_cancelled()
+        finally:
+            node.clear_execution_token(self._cancel_token)
         elapsed = time.time() - start
         self.finished_node.emit(node, elapsed)
-        return node.get_visualization_payload() if isinstance(node, TerrainBaseNode) else None
+
+    def _is_cancellation_exception(self, exc: Exception) -> bool:
+        if isinstance(exc, NodeExecutionCancelled):
+            return True
+        return self._cancel_token.is_cancelled() and str(exc).strip().lower() == "execution cancelled."
 
 
 class NodeEditorWidget(QWidget):
@@ -317,6 +412,7 @@ class NodeEditorWidget(QWidget):
         self.auto_update_enabled = True
         self.is_generating = False
         self.pending_update = False
+        self.executing_nodes: set[object] = set()
         self.active_progress_bars: Dict[object, NodeProgressBar] = {}
         self.active_execution_labels: Dict[object, NodeExecutionLabel] = {}
         self.execution_thread = None
@@ -356,6 +452,11 @@ class NodeEditorWidget(QWidget):
         self.export_btn = QPushButton("Export Output")
         self.export_btn.clicked.connect(self.export_pinned_output)
         toolbar_layout.addWidget(self.export_btn)
+
+        self.stop_btn = QPushButton("Stop Compute")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self._stop_current_execution)
+        toolbar_layout.addWidget(self.stop_btn)
 
         toolbar_layout.addStretch()
 
@@ -407,6 +508,7 @@ class NodeEditorWidget(QWidget):
     def setup_node_graph(self):
         undo_stack = QUndoStack(self)
         viewer = MacFriendlyNodeViewer(undo_stack=undo_stack, delete_callback=self._delete_selected_nodes)
+        viewer.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
         self.node_graph = NodeGraph(viewer=viewer, undo_stack=undo_stack)
         graph_widget = self.node_graph.widget
         graph_widget.installEventFilter(self)
@@ -417,6 +519,9 @@ class NodeEditorWidget(QWidget):
         self.node_graph.set_zoom(1.0)
         self.node_graph.node_double_clicked.connect(self._on_node_double_clicked)
         self.node_graph.nodes_deleted.connect(self._on_nodes_deleted)
+        self.node_graph.port_connected.connect(self._on_port_connected)
+        self.node_graph.port_disconnected.connect(self._on_port_disconnected)
+        self.node_graph.property_changed.connect(self._on_graph_property_changed)
         self.register_nodes()
         self.create_global_nodes()
 
@@ -499,6 +604,36 @@ class NodeEditorWidget(QWidget):
         self.auto_update_enabled = (state == Qt.Checked)
         self._update_status_bar()
 
+    def _on_graph_property_changed(self, node, name, _value):
+        if not isinstance(node, TerrainBaseNode):
+            return
+        if name.startswith("_") or name in ("name", "selected", "pos"):
+            return
+        self._on_node_property_changed(node)
+
+    def _on_port_connected(self, output_port, input_port):
+        self._on_graph_connection_changed(output_port, input_port)
+
+    def _on_port_disconnected(self, output_port, input_port):
+        self._on_graph_connection_changed(output_port, input_port)
+
+    def _on_graph_connection_changed(self, output_port, input_port):
+        target_node = getattr(input_port, "node", lambda: None)()
+        source_node = getattr(output_port, "node", lambda: None)()
+        if isinstance(target_node, TerrainBaseNode):
+            target_node.mark_dirty()
+            self._update_node_visual_state(target_node)
+        if isinstance(source_node, TerrainBaseNode):
+            self._update_node_visual_state(source_node)
+        if self.auto_update_enabled and self.pinned_node is not None:
+            if (
+                target_node == self.pinned_node
+                or source_node == self.pinned_node
+                or self._is_upstream_of(target_node, self.pinned_node)
+                or self._is_upstream_of(source_node, self.pinned_node)
+            ):
+                self._schedule_auto_update()
+
     def _on_node_property_changed(self, node):
         if hasattr(node, "mark_dirty"):
             node.mark_dirty()
@@ -513,10 +648,11 @@ class NodeEditorWidget(QWidget):
                 self._schedule_auto_update()
 
     def _schedule_auto_update(self):
+        self.update_timer.stop()
         if self.is_generating:
             self.pending_update = True
+            self._cancel_active_execution(reschedule=True, status_text="Cancelling stale execution...")
             return
-        self.update_timer.stop()
         self.update_timer.start(self.update_cooldown_ms)
 
     def _execute_pinned_node(self):
@@ -527,32 +663,48 @@ class NodeEditorWidget(QWidget):
     def execute_node_async(self, node):
         if self.execution_thread and self.execution_thread.isRunning():
             self.pending_update = True
+            self._cancel_active_execution(reschedule=True, status_text=f"Cancelling current run for {node._base_name}...")
             return
         self.is_generating = True
         self.pending_update = False
+        self.executing_nodes.clear()
         self.execution_thread = GraphExecutionThread(node)
         self.execution_thread.started_node.connect(self._on_thread_node_started)
         self.execution_thread.finished_node.connect(self._on_thread_node_finished)
         self.execution_thread.failed_node.connect(self._on_thread_node_failed)
         self.execution_thread.completed.connect(self._on_thread_execution_completed)
+        self.execution_thread.cancelled.connect(self._on_thread_execution_cancelled)
         self.execution_thread.finished.connect(self._on_thread_finished)
+        self._refresh_execution_controls()
+        self.status_bar.setText(f"Executing: {node._base_name}")
         self.execution_thread.start()
 
     def _on_thread_node_started(self, node):
+        if self.sender() is not self.execution_thread:
+            return
+        self.executing_nodes.add(node)
         self._show_progress_bar(node)
         self._update_node_visual_state(node, "executing")
         self.status_bar.setText(f"Executing: {node._base_name}")
 
     def _on_thread_node_finished(self, node, execution_time):
+        if self.sender() is not self.execution_thread:
+            return
+        self.executing_nodes.discard(node)
         self._hide_progress_bar(node, execution_time)
         self._update_node_visual_state(node, "cached")
 
     def _on_thread_node_failed(self, node, message):
+        if self.sender() is not self.execution_thread:
+            return
+        self.executing_nodes.discard(node)
         self._hide_progress_bar(node)
         self._update_node_visual_state(node, "error")
         QMessageBox.critical(self, "Node Execution Error", f"{node._base_name}: {message}")
 
     def _on_thread_execution_completed(self, node, payload):
+        if self.sender() is not self.execution_thread:
+            return
         self._pin_node(node)
         try:
             visualized = self._visualize_payload(payload, node._base_name)
@@ -568,10 +720,51 @@ class NodeEditorWidget(QWidget):
         if visualized:
             self.status_bar.setText(f"Display: {node._base_name} (Pinned)")
 
+    def _on_thread_execution_cancelled(self, _node):
+        if self.sender() is not self.execution_thread:
+            return
+        if self.pending_update:
+            self.status_bar.setText("Cancelled stale execution. Recomputing...")
+        else:
+            self.status_bar.setText("Computation stopped.")
+
     def _on_thread_finished(self):
+        if self.sender() is not self.execution_thread:
+            return
+        self._clear_running_execution_artifacts()
         self.is_generating = False
+        self.execution_thread = None
+        self._refresh_execution_controls()
         if self.pending_update and self.pinned_node is not None:
             self._schedule_auto_update()
+        else:
+            self._update_status_bar()
+
+    def _cancel_active_execution(self, *, reschedule: bool, status_text: Optional[str] = None):
+        thread = self.execution_thread
+        if thread is None or not thread.isRunning():
+            return False
+        self.pending_update = reschedule
+        thread.request_cancel()
+        if status_text:
+            self.status_bar.setText(status_text)
+        self._refresh_execution_controls()
+        return True
+
+    def _stop_current_execution(self):
+        self.update_timer.stop()
+        self._cancel_active_execution(reschedule=False, status_text="Stopping computation...")
+
+    def _refresh_execution_controls(self):
+        self.stop_btn.setEnabled(self.is_generating)
+
+    def _clear_running_execution_artifacts(self):
+        for node in list(self.executing_nodes):
+            self._hide_progress_bar(node)
+            if isinstance(node, TerrainBaseNode):
+                state = "cached" if not node._is_dirty and node.get_output_data() is not None else "dirty"
+                self._update_node_visual_state(node, state)
+        self.executing_nodes.clear()
 
     def _validate_node_input_types(self, node):
         if not isinstance(node, TerrainBaseNode):
@@ -692,6 +885,8 @@ class NodeEditorWidget(QWidget):
             self.active_execution_labels[node] = NodeExecutionLabel(node.view, execution_time)
 
     def _is_upstream_of(self, node, target_node):
+        if not isinstance(node, TerrainBaseNode) or target_node is None:
+            return False
         visited = set()
         queue = [node]
         while queue:
@@ -755,6 +950,10 @@ class NodeEditorWidget(QWidget):
 
     def _clear_all_caches(self):
         if not self.node_graph:
+            return
+        if self.is_generating:
+            self._stop_current_execution()
+            QMessageBox.information(self, "Cache Clear Deferred", "Stopped the active computation. Clear caches again once the run has finished.")
             return
         for node in self.node_graph.all_nodes():
             if hasattr(node, "_cached_output"):
@@ -863,6 +1062,10 @@ class NodeEditorWidget(QWidget):
         self.status_bar.setText(f"Saved graph: {saved.name}")
 
     def load_graph_from_file(self):
+        if self.is_generating:
+            self._stop_current_execution()
+            QMessageBox.information(self, "Load Deferred", "Stopped the active computation. Load the graph again once the run has finished.")
+            return
         filename, _ = QFileDialog.getOpenFileName(self, "Load Node Graph", "", "Node Graph (*.terrain_graph.json *.json);;All Files (*)")
         if not filename:
             return
@@ -886,6 +1089,10 @@ class NodeEditorWidget(QWidget):
     def _delete_selected_nodes(self):
         if not self.node_graph:
             return
+        if self.is_generating:
+            self._stop_current_execution()
+            QMessageBox.information(self, "Delete Deferred", "Stopped the active computation. Delete the selected nodes again once the run has finished.")
+            return
         protected_nodes = {self.project_settings_node, self.world_settings_node}
         for node in list(self.node_graph.selected_nodes()):
             if node in protected_nodes:
@@ -894,6 +1101,11 @@ class NodeEditorWidget(QWidget):
 
     def clear_graph(self, skip_confirmation: bool = False, recreate_globals: bool = True):
         if not self.node_graph:
+            return
+        if self.is_generating:
+            self._stop_current_execution()
+            if not skip_confirmation:
+                QMessageBox.information(self, "Clear Deferred", "Stopped the active computation. Clear the graph again once the run has finished.")
             return
         if not skip_confirmation:
             reply = QMessageBox.question(

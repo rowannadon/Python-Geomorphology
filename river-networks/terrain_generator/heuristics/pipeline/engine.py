@@ -509,7 +509,7 @@ class TerrainEngine(QObject):
         return fden, gden
 
     # ---- main entry used by Worker ----
-    def compute_selected(self, selections):
+    def compute_selected(self, selections, cancel_callback=None):
         """selections: list of keys to compute"""
         if self.elev is None:
             raise RuntimeError("No heightmap loaded.")
@@ -518,6 +518,8 @@ class TerrainEngine(QObject):
 
         tot = len(selections)
         for idx, sel in enumerate(selections, 1):
+            if callable(cancel_callback) and cancel_callback():
+                raise RuntimeError("Execution cancelled.")
             self.progress.emit(f"Computing {sel}...", int(100*idx/tot))
 
             if sel == "elevation":

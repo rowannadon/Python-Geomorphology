@@ -135,8 +135,10 @@ class SampleTerrainGraphNode(TerrainBaseNode):
         shape = heightfield.array.shape
         self.emit_progress(0.15, "Computing gradients")
         deltas = normalize(np.abs(gaussian_gradient(heightfield.array)))
+        self.check_cancelled()
         self.emit_progress(0.35, "Sampling graph points")
         points, tri, neighbors, edge_weights = generator._create_triangulation(shape)
+        self.check_cancelled()
         coords = generator._points_to_indices(points, shape)
         sampled_land = np.asarray(land_mask.array[coords[:, 0], coords[:, 1]], dtype=bool)
         sampled_deltas = np.asarray(deltas[coords[:, 0], coords[:, 1]], dtype=np.float32)
@@ -181,6 +183,7 @@ class SolveBaseGraphElevationNode(TerrainBaseNode):
         )
         self.emit_progress(0.2, "Solving base graph heights")
         point_height = generator._compute_height(graph.points, list(graph.neighbors), list(graph.edge_weights), graph.sampled_deltas.astype(np.float64))
+        self.check_cancelled()
         updated = graph.with_updates(point_height=point_height)
         self.emit_progress(1.0, "Base graph ready")
         self.set_output_data(updated)
@@ -234,6 +237,7 @@ class TerraceMaxDeltaNode(TerrainBaseNode):
         if generator.params.use_variable_max_delta:
             self.emit_progress(0.35, "Generating terrace modulation")
             variable_max_delta = generator._generate_variable_max_delta((graph.dimension, graph.dimension), coords, normalized_heights)
+            self.check_cancelled()
         if self.get_property("enabled_curve") == "True":
             self.emit_progress(0.65, "Applying max-delta curve")
             curve_points = _parse_points_text(str(self.get_property("curve_points") or ""), [(0.0, 1.0), (1.0, 1.0)])
@@ -387,6 +391,7 @@ class ComputeRiverNetworkNode(TerrainBaseNode):
             normalized_heights,
             np.asarray(graph.sampled_land_mask, dtype=bool),
         )
+        self.check_cancelled()
         payload = RiverNetworkData(
             upstream=network.upstream,
             downstream=network.downstream,
@@ -445,6 +450,7 @@ class ApplyRiverDowncuttingNode(TerrainBaseNode):
             rock_assignments=graph.rock_assignments,
             rock_parameters=list(graph.rock_parameters) if graph.rock_parameters else None,
         )
+        self.check_cancelled()
         updated = graph.with_updates(point_height=np.asarray(point_height, dtype=np.float64))
         self.set_output_data(updated)
         return updated
@@ -575,10 +581,12 @@ class BundleTerrainOutputsNode(TerrainBaseNode):
             self.emit_progress(0.45, "Rasterizing river network")
             river_volume = _rasterize_graph_height(graph, river_network.volume).astype(np.float32)
             watershed_mask = _render_categorical_map(graph, river_network.watershed)
+            self.check_cancelled()
         rock_map = None
         if graph.rock_assignments is not None:
             self.emit_progress(0.65, "Rasterizing rock assignments")
             rock_map = _render_categorical_map(graph, graph.rock_assignments)
+            self.check_cancelled()
         bundle = TerrainBundleData(
             heightfield=heightfield,
             land_mask=land_mask,
@@ -685,7 +693,13 @@ class ParticleErosionNode(TerrainBaseNode):
             progress = min(max(percent / 100.0, 0.0), 1.0)
             self.emit_progress(progress, message)
 
-        eroded, deposition_map = erosion.erode(normalized_terrain, parameter_maps=erosion_maps, progress_callback=progress_callback)
+        eroded, deposition_map = erosion.erode(
+            normalized_terrain,
+            parameter_maps=erosion_maps,
+            progress_callback=progress_callback,
+            cancel_check=self.is_cancelled,
+        )
+        self.check_cancelled()
         eroded_height = np.asarray(eroded * max_height, dtype=np.float32)
         land_mask = bundle.land_mask or MaskData(array=eroded_height > 0.001, name="Land Mask")
         land_mask = MaskData(array=np.asarray(eroded_height > 0.001, dtype=bool), name=land_mask.name)

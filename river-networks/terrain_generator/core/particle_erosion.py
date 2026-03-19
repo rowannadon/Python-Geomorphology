@@ -356,7 +356,8 @@ class ParticleErosion:
     
     def erode(self, heightmap: np.ndarray,
             parameter_maps: Optional[Dict[str, np.ndarray]] = None,
-            progress_callback: Optional[callable] = None) -> Tuple[np.ndarray, np.ndarray]:
+            progress_callback: Optional[callable] = None,
+            cancel_check: Optional[callable] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
         Apply particle erosion with ocean deposition allowed.
         """
@@ -423,6 +424,8 @@ class ParticleErosion:
         progress_denominator = max(num_batches + (1 if remainder else 0), 1)
 
         for batch_idx in range(num_batches):
+            if cancel_check and cancel_check():
+                raise RuntimeError("Execution cancelled.")
             if progress_callback and batch_idx % 10 == 0:
                 progress = int(70 + (batch_idx / progress_denominator) * 20)
                 progress_callback(progress, f"Erosion: {batch_idx * batch_size}/{self.iterations} droplets...")
@@ -444,6 +447,8 @@ class ParticleErosion:
             )
 
         if remainder:
+            if cancel_check and cancel_check():
+                raise RuntimeError("Execution cancelled.")
             if progress_callback:
                 progress = int(70 + (num_batches / progress_denominator) * 20)
                 progress_callback(progress, f"Erosion: {num_batches * batch_size}/{self.iterations} droplets...")
@@ -466,6 +471,8 @@ class ParticleErosion:
         # Post-processing: smooth to reduce noise while preserving features
         if self.blur_iterations > 0:
             for _ in range(self.blur_iterations):
+                if cancel_check and cancel_check():
+                    raise RuntimeError("Execution cancelled.")
                 # Selective smoothing - less on steep slopes
                 grad_mag = np.sqrt(
                     np.gradient(eroded, axis=0)**2 + 

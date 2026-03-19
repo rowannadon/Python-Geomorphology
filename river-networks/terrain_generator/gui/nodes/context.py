@@ -2,7 +2,29 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Dict, Optional, Tuple
+
+
+class NodeExecutionCancelled(RuntimeError):
+    """Raised when an in-flight node execution is cancelled."""
+
+
+class ExecutionCancellationToken:
+    """Thread-safe cooperative cancellation token for pipeline runs."""
+
+    def __init__(self):
+        self._event = threading.Event()
+
+    def cancel(self):
+        self._event.set()
+
+    def is_cancelled(self) -> bool:
+        return self._event.is_set()
+
+    def raise_if_cancelled(self):
+        if self._event.is_set():
+            raise NodeExecutionCancelled("Execution cancelled.")
 
 
 class NodeGraphContext:
@@ -13,6 +35,7 @@ class NodeGraphContext:
     def __init__(self):
         self._project_settings_node = None
         self._world_settings_node = None
+        self._heuristic_cache_lock = threading.RLock()
         self._properties: Dict[str, Any] = {
             "dimension": 1024,
             "seed": 42,
@@ -22,7 +45,16 @@ class NodeGraphContext:
 
     def clear_runtime_caches(self):
         """Clear caches for graph execution."""
-        self.heuristic_cache.clear()
+        with self._heuristic_cache_lock:
+            self.heuristic_cache.clear()
+
+    def get_cached_heuristic(self, key: Tuple[str, str]):
+        with self._heuristic_cache_lock:
+            return self.heuristic_cache.get(key)
+
+    def set_cached_heuristic(self, key: Tuple[str, str], value: Any):
+        with self._heuristic_cache_lock:
+            self.heuristic_cache[key] = value
 
     def set_project_settings_node(self, node):
         self._project_settings_node = node

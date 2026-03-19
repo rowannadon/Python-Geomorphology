@@ -30,7 +30,7 @@ from ...core import ConsistentFBMNoise, gaussian_blur
 from ...core.utils import connect_inland_seas
 from ...io import HeightmapImporter
 from ..curves_widget import DEFAULT_LINEAR_CURVE, apply_curve_points, parse_curve_points
-from .context import get_global_context
+from .context import ExecutionCancellationToken, NodeExecutionCancelled, get_global_context
 from .node_widgets import (
     CurveEditorNodeWidget,
     FilePathNodeWidget,
@@ -283,6 +283,7 @@ class TerrainBaseNode(BaseNode):
         self._cached_output = None
         self._is_dirty = True
         self._last_error = None
+        self._execution_token: Optional[ExecutionCancellationToken] = None
         self._base_name = getattr(self, "NODE_NAME", self.__class__.__name__)
         self._serializable_properties: list[str] = []
         self._path_properties: set[str] = set()
@@ -369,6 +370,7 @@ class TerrainBaseNode(BaseNode):
         return restored
 
     def emit_progress(self, progress: float, message: str):
+        self.check_cancelled()
         self.signals.progress_updated.emit(self, max(0.0, min(1.0, float(progress))), str(message))
 
     def set_execution_state(self, state: str):
@@ -377,6 +379,21 @@ class TerrainBaseNode(BaseNode):
     def emit_error(self, message: str):
         self._last_error = str(message)
         self.signals.error_emitted.emit(self, self._last_error)
+
+    def bind_execution_token(self, token: Optional[ExecutionCancellationToken]):
+        self._execution_token = token
+
+    def clear_execution_token(self, token: Optional[ExecutionCancellationToken] = None):
+        if token is None or self._execution_token is token:
+            self._execution_token = None
+
+    def is_cancelled(self) -> bool:
+        return self._execution_token is not None and self._execution_token.is_cancelled()
+
+    def check_cancelled(self):
+        token = self._execution_token
+        if token is not None:
+            token.raise_if_cancelled()
 
     def mark_dirty(self):
         self._cached_output = None
@@ -395,6 +412,7 @@ class TerrainBaseNode(BaseNode):
         return self._cached_output
 
     def set_output_data(self, data: Any):
+        self.check_cancelled()
         self._cached_output = data
         self._is_dirty = False
         self._last_error = None
@@ -697,6 +715,7 @@ class FBMNode(TerrainBaseNode):
         )
         self.emit_progress(0.1, "Generating FBM noise")
         arr = generator.generate((dim, dim))
+        self.check_cancelled()
         payload = HeightfieldData(array=arr, name=self._base_name, metadata={"node": self._base_name})
         self.emit_progress(1.0, "FBM noise ready")
         self.set_output_data(payload)
@@ -727,6 +746,7 @@ class ImportHeightmapNode(TerrainBaseNode):
         dim = self.context.get_resolution()
         self.emit_progress(0.1, "Loading heightmap")
         heightfield, land_mask = HeightmapImporter.load_heightmap(file_path, (dim, dim))
+        self.check_cancelled()
         payload = HeightfieldData(array=heightfield, name=self._base_name, metadata={"source_path": file_path})
         mask_payload = MaskData(array=land_mask, name=f"{self._base_name} Mask")
         self.emit_progress(1.0, "Heightmap loaded")
@@ -885,6 +905,7 @@ class ShapeNode(TerrainBaseNode):
             signed_distance = self._polygon_signed_distance(x + offset_x, y + offset_y, vertices)
         else:
             raise ValueError(f"Unknown shape '{shape_type}'.")
+        self.check_cancelled()
         if signed_distance is None:
             edge_dist = np.clip((dist - radius) / falloff, 0.0, 1.0)
         else:
@@ -963,6 +984,7 @@ class CombineNode(TerrainBaseNode):
                 max(abs(_parse_float(self.get_property("divide_epsilon"), 1e-5)), 1e-6),
                 result,
             )
+            self.check_cancelled()
         elif operation == "fade":
             fade = np.clip(_parse_float(self.get_property("fade_amount"), 0.5), 0.0, 1.0)
             combined = (1.0 - fade) * a + fade * b
@@ -1076,7 +1098,9 @@ class DomainWarpNode(TerrainBaseNode):
         )
         offset_x = fbm_x.generate((dim, dim))
         offset_y = fbm_y.generate((dim, dim))
+        self.check_cancelled()
         warped = self._sample(source.array, amplitude * (offset_x + 1j * offset_y))
+        self.check_cancelled()
         payload = source.with_array(warped.astype(np.float32), name=self._base_name)
         self.set_output_data(payload)
         return payload
@@ -1147,6 +1171,7 @@ class ThresholdFloodNode(TerrainBaseNode):
                 flooded,
                 land_mask,
             )
+            self.check_cancelled()
         else:
             flooded = np.where(source.array > sea_level, source.array - sea_level, 0.0).astype(np.float32)
             land_mask = flooded > 0.001
@@ -1224,6 +1249,7 @@ class ConnectInlandSeasNode(TerrainBaseNode):
             fill_height=max(_parse_float(self.get_property("fill_height"), 0.01), 0.0),
             water_level=sea_level,
         )
+        self.check_cancelled()
         payload = source.with_array(np.asarray(adjusted_height, dtype=np.float32), name=self._base_name)
         mask = MaskData(array=np.asarray(adjusted_land, dtype=bool), name=land_mask_name)
         self.set_output_data({"heightfield": payload, "land_mask": mask})

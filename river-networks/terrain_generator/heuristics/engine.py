@@ -182,7 +182,11 @@ class HeuristicEngine:
         self._apply_heightmap(heightmap, settings.z_min, settings.z_max)
         self._apply_settings(settings)
 
-    def compute(self, selections: Iterable[str]) -> Tuple[Dict[str, QImage], Dict[str, np.ndarray]]:
+    def compute(
+        self,
+        selections: Iterable[str],
+        cancel_callback=None,
+    ) -> Tuple[Dict[str, QImage], Dict[str, np.ndarray]]:
         """Compute the requested heuristic layers.
 
         Returns a tuple ``(images, arrays)`` that match the TerrainEngine API.
@@ -206,7 +210,7 @@ class HeuristicEngine:
         self._engine.failed.connect(_on_failed)
 
         try:
-            self._engine.compute_selected(list(selections))
+            self._engine.compute_selected(list(selections), cancel_callback=cancel_callback)
         finally:
             try:
                 self._engine.finished.disconnect(_on_finished)
