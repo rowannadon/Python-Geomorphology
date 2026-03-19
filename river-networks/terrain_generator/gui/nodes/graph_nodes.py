@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-import traceback
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import matplotlib.tri as mtri
 import numpy as np
@@ -154,7 +153,6 @@ class SampleTerrainGraphNode(TerrainBaseNode):
         )
         self.emit_progress(1.0, "Graph sampled")
         self.set_output_data(graph)
-        self.signals.execution_finished.emit(self)
         return graph
 
 
@@ -186,7 +184,6 @@ class SolveBaseGraphElevationNode(TerrainBaseNode):
         updated = graph.with_updates(point_height=point_height)
         self.emit_progress(1.0, "Base graph ready")
         self.set_output_data(updated)
-        self.signals.execution_finished.emit(self)
         return updated
 
 
@@ -219,7 +216,6 @@ class TerraceMaxDeltaNode(TerrainBaseNode):
         if graph.points.size == 0:
             updated = graph.with_updates(variable_max_delta=np.zeros(0, dtype=np.float64))
             self.set_output_data(updated)
-            self.signals.execution_finished.emit(self)
             return updated
         normalized_heights = normalize(np.asarray(graph.point_height, dtype=np.float64), bounds=(0, 1))
         generator = _make_generator(
@@ -246,7 +242,6 @@ class TerraceMaxDeltaNode(TerrainBaseNode):
         updated = graph.with_updates(variable_max_delta=np.asarray(variable_max_delta, dtype=np.float64))
         self.emit_progress(1.0, "Max-delta modulation ready")
         self.set_output_data(updated)
-        self.signals.execution_finished.emit(self)
         return updated
 
 
@@ -293,7 +288,6 @@ class RockStackWarpNode(TerrainBaseNode):
             updates["rock_assignments"] = np.asarray(assignments, dtype=np.int32)
         updated = graph.with_updates(**updates)
         self.set_output_data(updated)
-        self.signals.execution_finished.emit(self)
         return updated
 
 
@@ -357,7 +351,6 @@ class AssignRockLayersNode(TerrainBaseNode):
             rock_assignments=np.asarray(assignments, dtype=np.int32),
         )
         self.set_output_data(updated)
-        self.signals.execution_finished.emit(self)
         return updated
 
 
@@ -403,7 +396,6 @@ class ComputeRiverNetworkNode(TerrainBaseNode):
         )
         self.emit_progress(1.0, "River network ready")
         self.set_output_data(payload)
-        self.signals.execution_finished.emit(self)
         return payload
 
 
@@ -455,7 +447,6 @@ class ApplyRiverDowncuttingNode(TerrainBaseNode):
         )
         updated = graph.with_updates(point_height=np.asarray(point_height, dtype=np.float64))
         self.set_output_data(updated)
-        self.signals.execution_finished.emit(self)
         return updated
 
 
@@ -503,7 +494,6 @@ class RasterizeGraphFieldNode(TerrainBaseNode):
             raise ValueError(f"Unsupported field '{field_name}'.")
         payload = HeightfieldData(array=np.asarray(arr, dtype=np.float32), name=self._base_name)
         self.set_output_data(payload)
-        self.signals.execution_finished.emit(self)
         return payload
 
 
@@ -543,7 +533,6 @@ class RockLayerOverlayNode(TerrainBaseNode):
         )
         overlay.metadata["preview_bundle"] = preview_bundle
         self.set_output_data(overlay)
-        self.signals.execution_finished.emit(self)
         return overlay
 
 
@@ -605,7 +594,6 @@ class BundleTerrainOutputsNode(TerrainBaseNode):
         )
         self.emit_progress(1.0, "Terrain bundle ready")
         self.set_output_data(bundle)
-        self.signals.execution_finished.emit(self)
         return bundle
 
 
@@ -628,13 +616,11 @@ class BuildErosionParameterMapsNode(TerrainBaseNode):
         rock_parameters = bundle.metadata.get("rock_parameters", []) if bundle.metadata else []
         if rock_map is None or not rock_parameters:
             self.set_output_data(bundle)
-            self.signals.execution_finished.emit(self)
             return bundle
         generator = _make_generator(context=self.context, dimension=bundle.heightfield.array.shape[0])
         erosion_maps = generator._build_parameter_maps(np.asarray(rock_map, dtype=np.int32), list(rock_parameters))
         updated = bundle.with_updates(erosion_parameter_maps=erosion_maps)
         self.set_output_data(updated)
-        self.signals.execution_finished.emit(self)
         return updated
 
 
@@ -668,7 +654,6 @@ class ParticleErosionNode(TerrainBaseNode):
         max_height = float(heightfield.max())
         if max_height <= 0.0:
             self.set_output_data(bundle)
-            self.signals.execution_finished.emit(self)
             return bundle
         erosion_maps = dict(bundle.erosion_parameter_maps)
         if not erosion_maps and bundle.rock_map is not None:
@@ -712,9 +697,4 @@ class ParticleErosionNode(TerrainBaseNode):
         )
         self.emit_progress(1.0, "Particle erosion complete")
         self.set_output_data(updated)
-        self.signals.execution_finished.emit(self)
         return updated
-
-
-TerrainGraph = TerrainGraphData
-BuildTerrainNode = SampleTerrainGraphNode

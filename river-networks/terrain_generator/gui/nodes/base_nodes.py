@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import math
 import os
-import traceback
 from pathlib import Path, PureWindowsPath
-from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 from NodeGraphQt import BaseNode
@@ -93,7 +91,6 @@ def _legacy_area_to_pixels(value: float, resolution: int, legacy_resolution: flo
 class NodeSignals(QObject):
     """Signals emitted by nodes as they execute."""
 
-    execution_finished = pyqtSignal(object)
     progress_updated = pyqtSignal(object, float, str)
     state_changed = pyqtSignal(object, str)
     error_emitted = pyqtSignal(object, str)
@@ -383,7 +380,6 @@ class ProjectSettingsNode(TerrainBaseNode):
     def execute(self):
         settings = SettingsData(values=self.collect_settings(), scope="project")
         self.set_output_data(settings)
-        self.signals.execution_finished.emit(self)
         return settings
 
 
@@ -472,7 +468,6 @@ class WorldSettingsNode(TerrainBaseNode):
     def execute(self):
         settings = SettingsData(values=self.collect_settings(), scope="world")
         self.set_output_data(settings)
-        self.signals.execution_finished.emit(self)
         return settings
 
 
@@ -494,7 +489,6 @@ class ConstantNode(TerrainBaseNode):
         arr = np.full((dim, dim), value, dtype=np.float32)
         payload = HeightfieldData(array=arr, name=self._base_name, metadata={"node": self._base_name})
         self.set_output_data(payload)
-        self.signals.execution_finished.emit(self)
         return payload
 
 
@@ -533,7 +527,6 @@ class FBMNode(TerrainBaseNode):
         payload = HeightfieldData(array=arr, name=self._base_name, metadata={"node": self._base_name})
         self.emit_progress(1.0, "FBM noise ready")
         self.set_output_data(payload)
-        self.signals.execution_finished.emit(self)
         return payload
 
 
@@ -565,7 +558,6 @@ class ImportHeightmapNode(TerrainBaseNode):
         mask_payload = MaskData(array=land_mask, name=f"{self._base_name} Mask")
         self.emit_progress(1.0, "Heightmap loaded")
         self.set_output_data({"heightfield": payload, "land_mask": mask_payload})
-        self.signals.execution_finished.emit(self)
         return self._cached_output
 
     def get_output_data(self):
@@ -728,7 +720,6 @@ class ShapeNode(TerrainBaseNode):
         heightfield = HeightfieldData(array=mask_arr.astype(np.float32), name=self._base_name)
         mask = MaskData(array=mask_arr >= 0.5, name=f"{self._base_name} Mask")
         self.set_output_data({"heightfield": heightfield, "mask": mask})
-        self.signals.execution_finished.emit(self)
         return self._cached_output
 
 
@@ -800,7 +791,6 @@ class CombineNode(TerrainBaseNode):
         result = a + mask * (combined - a)
         payload = a_data.with_array(result.astype(np.float32), name=self._base_name)
         self.set_output_data(payload)
-        self.signals.execution_finished.emit(self)
         return payload
 
 
@@ -877,7 +867,6 @@ class DomainWarpNode(TerrainBaseNode):
         warped = self._sample(source.array, amplitude * (offset_x + 1j * offset_y))
         payload = source.with_array(warped.astype(np.float32), name=self._base_name)
         self.set_output_data(payload)
-        self.signals.execution_finished.emit(self)
         return payload
 
 
@@ -913,7 +902,6 @@ class CurveRemapNode(TerrainBaseNode):
         remapped = apply_curve_points(normalized, points).astype(np.float32)
         payload = source.with_array(remapped, name=self._base_name)
         self.set_output_data(payload)
-        self.signals.execution_finished.emit(self)
         return payload
 
 
@@ -943,7 +931,6 @@ class ThresholdFloodNode(TerrainBaseNode):
         payload = source.with_array(flooded, name=self._base_name)
         mask = MaskData(array=land_mask, name=f"{self._base_name} Mask")
         self.set_output_data({"heightfield": payload, "land_mask": mask})
-        self.signals.execution_finished.emit(self)
         return self._cached_output
 
 
@@ -969,7 +956,6 @@ class GaussianBlurNode(TerrainBaseNode):
         else:
             payload = source.with_array(gaussian_blur(source.array, sigma=sigma).astype(np.float32), name=self._base_name)
         self.set_output_data(payload)
-        self.signals.execution_finished.emit(self)
         return payload
 
 
@@ -1019,7 +1005,6 @@ class ConnectInlandSeasNode(TerrainBaseNode):
         payload = source.with_array(np.asarray(adjusted_height, dtype=np.float32), name=self._base_name)
         mask = MaskData(array=np.asarray(adjusted_land, dtype=bool), name=land_mask_name)
         self.set_output_data({"heightfield": payload, "land_mask": mask})
-        self.signals.execution_finished.emit(self)
         return self._cached_output
 
 
@@ -1050,7 +1035,6 @@ class InvertNode(TerrainBaseNode):
             result = max_value - array + min_value
         payload = source.with_array(result.astype(np.float32), name=self._base_name)
         self.set_output_data(payload)
-        self.signals.execution_finished.emit(self)
         return payload
 
 
@@ -1086,7 +1070,6 @@ class NormalizeClampNode(TerrainBaseNode):
                 out = np.zeros_like(array, dtype=np.float32)
         payload = source.with_array(out.astype(np.float32), name=self._base_name)
         self.set_output_data(payload)
-        self.signals.execution_finished.emit(self)
         return payload
 
 
@@ -1109,9 +1092,4 @@ class LandMaskNode(TerrainBaseNode):
         sea_level = _parse_float(self.get_property("sea_level"), 0.0)
         mask = MaskData(array=np.asarray(source.array > sea_level, dtype=bool), name=self._base_name)
         self.set_output_data(mask)
-        self.signals.execution_finished.emit(self)
         return mask
-
-
-MapPropertiesNode = ProjectSettingsNode
-GenerateLandMaskNode = LandMaskNode

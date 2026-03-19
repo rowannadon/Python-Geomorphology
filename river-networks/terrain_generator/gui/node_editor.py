@@ -86,16 +86,82 @@ from .nodes import (
     TemperatureHeuristicNode,
     TerrainBaseNode,
     TerrainBundleData,
-    TerrainGraphData,
     TerraceMaxDeltaNode,
     ThresholdFloodNode,
     terrain_data_from_bundle,
     terrain_data_from_heightfield,
     WorldSettingsNode,
-    PORT_TYPE_HEIGHTFIELD,
-    PORT_TYPE_MAP_OVERLAY,
     port_type_for_payload,
     SettingsData,
+)
+
+NODE_MENU_GROUPS: Tuple[Tuple[str, Tuple[Tuple[str, Type[TerrainBaseNode]], ...]], ...] = (
+    (
+        "Settings",
+        (
+            ("Project Settings", ProjectSettingsNode),
+            ("World Settings", WorldSettingsNode),
+        ),
+    ),
+    (
+        "Terrain",
+        (
+            ("FBM Noise", FBMNode),
+            ("Constant", ConstantNode),
+            ("Import Heightmap", ImportHeightmapNode),
+            ("Shape Mask", ShapeNode),
+            ("Combine", CombineNode),
+            ("Domain Warp", DomainWarpNode),
+            ("Curve Remap", CurveRemapNode),
+            ("Threshold/Flood", ThresholdFloodNode),
+            ("Gaussian Blur", GaussianBlurNode),
+            ("Connect Inland Lakes", ConnectInlandSeasNode),
+            ("Invert", InvertNode),
+            ("Normalize/Clamp", NormalizeClampNode),
+            ("Land Mask", LandMaskNode),
+        ),
+    ),
+    (
+        "Graph",
+        (
+            ("Sample Terrain Graph", SampleTerrainGraphNode),
+            ("Solve Base Graph Elevation", SolveBaseGraphElevationNode),
+            ("Terrace/Max Delta", TerraceMaxDeltaNode),
+            ("Rock Stack Warp", RockStackWarpNode),
+            ("Assign Rock Layers", AssignRockLayersNode),
+            ("Rock Layer Overlay", RockLayerOverlayNode),
+            ("Compute River Network", ComputeRiverNetworkNode),
+            ("Apply River Downcutting", ApplyRiverDowncuttingNode),
+            ("Rasterize Graph Field", RasterizeGraphFieldNode),
+            ("Bundle Terrain Outputs", BundleTerrainOutputsNode),
+            ("Build Erosion Maps", BuildErosionParameterMapsNode),
+            ("Particle Erosion", ParticleErosionNode),
+        ),
+    ),
+    (
+        "Heuristics",
+        (
+            ("Slope", SlopeHeuristicNode),
+            ("Aspect", AspectHeuristicNode),
+            ("Normals", NormalHeuristicNode),
+            ("Curvature", CurvatureHeuristicNode),
+            ("TPI", TPIHeuristicNode),
+            ("Flow Accumulation", FlowAccumulationHeuristicNode),
+            ("TWI", TWIHeuristicNode),
+            ("SVF", SVFHeuristicNode),
+            ("Temperature", TemperatureHeuristicNode),
+            ("Precipitation", PrecipitationHeuristicNode),
+            ("PET", PETHeuristicNode),
+            ("AET", AETHeuristicNode),
+            ("Aridity", AridityHeuristicNode),
+            ("Biome", BiomeHeuristicNode),
+            ("Albedo", AlbedoHeuristicNode),
+            ("Continuous Albedo", ContinuousAlbedoHeuristicNode),
+            ("Foliage Color", FoliageColorHeuristicNode),
+            ("Forest Density", ForestDensityHeuristicNode),
+            ("Groundcover Density", GroundcoverDensityHeuristicNode),
+        ),
+    ),
 )
 
 
@@ -232,8 +298,6 @@ class GraphExecutionThread(QThread):
 class NodeEditorWidget(QWidget):
     """Widget containing the node graph editor with integrated visualization."""
 
-    node_visualized = pyqtSignal(object)
-
     BORDER_COLORS = {
         "clean": (80, 80, 80),
         "cached": (0, 200, 0),
@@ -274,60 +338,8 @@ class NodeEditorWidget(QWidget):
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(5, 5, 5, 5)
 
-        self._add_node_menu(toolbar_layout, "Settings", [
-            ("Project Settings", ProjectSettingsNode),
-            ("World Settings", WorldSettingsNode),
-        ])
-        self._add_node_menu(toolbar_layout, "Terrain", [
-            ("FBM Noise", FBMNode),
-            ("Constant", ConstantNode),
-            ("Import Heightmap", ImportHeightmapNode),
-            ("Shape Mask", ShapeNode),
-            ("Combine", CombineNode),
-            ("Domain Warp", DomainWarpNode),
-            ("Curve Remap", CurveRemapNode),
-            ("Threshold/Flood", ThresholdFloodNode),
-            ("Gaussian Blur", GaussianBlurNode),
-            ("Connect Inland Lakes", ConnectInlandSeasNode),
-            ("Invert", InvertNode),
-            ("Normalize/Clamp", NormalizeClampNode),
-            ("Land Mask", LandMaskNode),
-        ])
-        self._add_node_menu(toolbar_layout, "Graph", [
-            ("Sample Terrain Graph", SampleTerrainGraphNode),
-            ("Solve Base Graph Elevation", SolveBaseGraphElevationNode),
-            ("Terrace/Max Delta", TerraceMaxDeltaNode),
-            ("Rock Stack Warp", RockStackWarpNode),
-            ("Assign Rock Layers", AssignRockLayersNode),
-            ("Rock Layer Overlay", RockLayerOverlayNode),
-            ("Compute River Network", ComputeRiverNetworkNode),
-            ("Apply River Downcutting", ApplyRiverDowncuttingNode),
-            ("Rasterize Graph Field", RasterizeGraphFieldNode),
-            ("Bundle Terrain Outputs", BundleTerrainOutputsNode),
-            ("Build Erosion Maps", BuildErosionParameterMapsNode),
-            ("Particle Erosion", ParticleErosionNode),
-        ])
-        self._add_node_menu(toolbar_layout, "Heuristics", [
-            ("Slope", SlopeHeuristicNode),
-            ("Aspect", AspectHeuristicNode),
-            ("Normals", NormalHeuristicNode),
-            ("Curvature", CurvatureHeuristicNode),
-            ("TPI", TPIHeuristicNode),
-            ("Flow Accumulation", FlowAccumulationHeuristicNode),
-            ("TWI", TWIHeuristicNode),
-            ("SVF", SVFHeuristicNode),
-            ("Temperature", TemperatureHeuristicNode),
-            ("Precipitation", PrecipitationHeuristicNode),
-            ("PET", PETHeuristicNode),
-            ("AET", AETHeuristicNode),
-            ("Aridity", AridityHeuristicNode),
-            ("Biome", BiomeHeuristicNode),
-            ("Albedo", AlbedoHeuristicNode),
-            ("Continuous Albedo", ContinuousAlbedoHeuristicNode),
-            ("Foliage Color", FoliageColorHeuristicNode),
-            ("Forest Density", ForestDensityHeuristicNode),
-            ("Groundcover Density", GroundcoverDensityHeuristicNode),
-        ])
+        for label, entries in NODE_MENU_GROUPS:
+            self._add_node_menu(toolbar_layout, label, entries)
 
         self.remove_selected_btn = QPushButton("Remove Selected")
         self.remove_selected_btn.clicked.connect(self._delete_selected_nodes)
@@ -409,29 +421,16 @@ class NodeEditorWidget(QWidget):
         self.create_global_nodes()
 
     def register_nodes(self):
-        node_classes = [
-            ProjectSettingsNode, WorldSettingsNode,
-            ConstantNode, FBMNode, ImportHeightmapNode, ShapeNode,
-            CombineNode, DomainWarpNode, CurveRemapNode, ThresholdFloodNode,
-            ConnectInlandSeasNode,
-            GaussianBlurNode, InvertNode, NormalizeClampNode, LandMaskNode,
-            SampleTerrainGraphNode, SolveBaseGraphElevationNode, TerraceMaxDeltaNode,
-            RockStackWarpNode, AssignRockLayersNode, RockLayerOverlayNode, ComputeRiverNetworkNode,
-            ApplyRiverDowncuttingNode, RasterizeGraphFieldNode, BundleTerrainOutputsNode,
-            BuildErosionParameterMapsNode, ParticleErosionNode,
-            SlopeHeuristicNode, AspectHeuristicNode, NormalHeuristicNode,
-            CurvatureHeuristicNode, TPIHeuristicNode, FlowAccumulationHeuristicNode,
-            TWIHeuristicNode, SVFHeuristicNode, TemperatureHeuristicNode,
-            PrecipitationHeuristicNode, PETHeuristicNode, AETHeuristicNode,
-            AridityHeuristicNode, BiomeHeuristicNode, AlbedoHeuristicNode,
-            ContinuousAlbedoHeuristicNode, FoliageColorHeuristicNode,
-            ForestDensityHeuristicNode, GroundcoverDensityHeuristicNode,
-        ]
-        for node_cls in node_classes:
-            self.node_graph.register_node(node_cls)
-            node_type = f"{node_cls.__identifier__}.{node_cls.__name__}"
-            self.node_type_registry[node_type] = node_cls
-            self.create_type_lookup[node_cls.__name__] = node_type
+        registered: set[Type[TerrainBaseNode]] = set()
+        for _group_name, entries in NODE_MENU_GROUPS:
+            for _entry_label, node_cls in entries:
+                if node_cls in registered:
+                    continue
+                registered.add(node_cls)
+                self.node_graph.register_node(node_cls)
+                node_type = f"{node_cls.__identifier__}.{node_cls.__name__}"
+                self.node_type_registry[node_type] = node_cls
+                self.create_type_lookup[node_cls.__name__] = node_type
 
     def create_global_nodes(self):
         self.project_settings_node = self._create_node_instance(ProjectSettingsNode, pos=(-520, -140))
@@ -721,19 +720,19 @@ class NodeEditorWidget(QWidget):
             terrain = terrain_data_from_heightfield(payload)
             self.node_viewport.clear_overlay_image()
             self.node_viewport.set_overlay_visible(False)
-            self._set_terrain_on_viewports(terrain)
+            self.node_viewport.set_terrain(terrain)
         elif isinstance(payload, TerrainBundleData):
             terrain = terrain_data_from_bundle(payload)
             self.node_viewport.clear_overlay_image()
             self.node_viewport.set_overlay_visible(False)
-            self._set_terrain_on_viewports(terrain)
+            self.node_viewport.set_terrain(terrain)
         elif isinstance(payload, MapOverlayData):
             preview_bundle = payload.metadata.get("preview_bundle")
             if isinstance(preview_bundle, TerrainBundleData):
                 terrain = terrain_data_from_bundle(preview_bundle)
             else:
                 terrain = terrain_data_from_heightfield(payload.base_heightfield)
-            self._set_terrain_on_viewports(terrain)
+            self.node_viewport.set_terrain(terrain)
             self.node_viewport.set_overlay_image(payload.rgba)
             self.node_viewport.set_overlay_visible(True)
         elif isinstance(payload, SettingsData):
@@ -752,11 +751,7 @@ class NodeEditorWidget(QWidget):
             )
             self.status_bar.setText(f"{node_name}: unsupported preview type")
             return False
-        self.node_visualized.emit(node_name)
         return True
-
-    def _set_terrain_on_viewports(self, terrain):
-        self.node_viewport.set_terrain(terrain)
 
     def _clear_all_caches(self):
         if not self.node_graph:

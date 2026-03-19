@@ -1,9 +1,8 @@
 """Utility functions for terrain generation."""
 
 import numpy as np
-import collections
 import scipy.spatial
-from typing import Tuple, List, Optional
+from typing import Tuple, List
 from numba import njit, prange
 import matplotlib.tri as mtri
 from functools import lru_cache
@@ -162,16 +161,6 @@ def _poisson_disc_numba(H, W, radius, retries, seed):
 def poisson_disc_sampling(shape: Tuple[int, int], radius: float, retries: int = 16, seed: int = -1) -> np.ndarray:
     H, W = int(shape[0]), int(shape[1])
     return _poisson_disc_numba(H, W, float(radius), int(retries), int(seed))
-
-
-def remove_lakes(mask: np.ndarray) -> np.ndarray:
-    """Removes bodies of water enclosed by land."""
-    import skimage.measure
-    labels = skimage.measure.label(~mask, connectivity=1)
-    new_mask = np.zeros_like(mask, dtype=bool)
-    new_mask[labels != labels[0, 0]] = True
-    return new_mask
-
 # def render_triangulation(shape: Tuple[int, int], tri, values: np.ndarray) -> np.ndarray:
 #     """Renders values for each triangle on an array."""
 #     import matplotlib.tri

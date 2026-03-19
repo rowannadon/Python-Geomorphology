@@ -281,7 +281,6 @@ class HeuristicMapNode(TerrainBaseNode):
         overlay = self._compute_overlay()
         self.emit_progress(1.0, f"{self._base_name} ready")
         self.set_output_data(overlay)
-        self.signals.execution_finished.emit(self)
         return overlay
 
 
