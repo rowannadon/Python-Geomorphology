@@ -1229,6 +1229,8 @@ class ConnectInlandSeasNode(TerrainBaseNode):
         self.add_text_input("sea_level", "Sea Level", text="0.0")
         self.add_text_input("min_lake_size", "Min Lake Size", text="30")
         self.add_text_input("carve_depth", "Carve Depth", text="0.1")
+        self.add_text_input("channel_width", "Channel Width", text="5.0")
+        self.add_text_input("channel_falloff", "Channel Falloff", text="1.2")
         self.add_text_input("fill_height", "Fill Height", text="0.01")
 
     def execute(self):
@@ -1246,6 +1248,11 @@ class ConnectInlandSeasNode(TerrainBaseNode):
             land_mask_array,
             min_sea_size=_legacy_area_to_pixels(_parse_int(self.get_property("min_lake_size"), 30), source.array.shape[0]),
             carve_depth=max(_parse_float(self.get_property("carve_depth"), 0.1), 0.0),
+            channel_width=max(
+                _legacy_distance_to_cells(_parse_float(self.get_property("channel_width"), 5.0), source.array.shape[0]),
+                0.0,
+            ),
+            channel_falloff=max(_parse_float(self.get_property("channel_falloff"), 1.2), 0.05),
             fill_height=max(_parse_float(self.get_property("fill_height"), 0.01), 0.0),
             water_level=sea_level,
         )

@@ -250,7 +250,9 @@ def identify_inland_seas(land_mask: np.ndarray) -> Tuple[np.ndarray, List[np.nda
 
 def carve_channel_to_ocean(heightmap: np.ndarray, land_mask: np.ndarray,
                           inland_sea_mask: np.ndarray, ocean_mask: np.ndarray,
-                          carve_depth: float = 0.05) -> np.ndarray:
+                          carve_depth: float = 0.05,
+                          channel_width: float = 5.0,
+                          channel_falloff: float = 1.2) -> np.ndarray:
     """
     Carve a channel from inland sea to ocean.
     
@@ -260,6 +262,8 @@ def carve_channel_to_ocean(heightmap: np.ndarray, land_mask: np.ndarray,
         inland_sea_mask: Boolean mask of the specific inland sea
         ocean_mask: Boolean mask of the ocean
         carve_depth: How deep to carve the channel
+        channel_width: Channel radius in pixels/cells
+        channel_falloff: Edge softness for the carved channel profile
         
     Returns:
         Modified heightmap with carved channel
@@ -324,21 +328,25 @@ def carve_channel_to_ocean(heightmap: np.ndarray, land_mask: np.ndarray,
     # Carve the channel
     modified = heightmap.copy()
     
-    # Create a smooth channel profile
-    channel_width = 5  # pixels
-    edge_softness = 1.2  # >1 => gentler edges, ~1 is good, <1 steeper
+    # Create a smooth channel profile.
+    channel_radius = max(float(channel_width), 0.0)
+    falloff_softness = max(float(channel_falloff), 0.05)
+    channel_radius_cells = max(int(np.ceil(channel_radius)), 0)
 
     for y, x in path_indices:
         # Carve the channel point and its neighbors
-        for dy in range(-channel_width, channel_width + 1):
-            for dx in range(-channel_width, channel_width + 1):
+        for dy in range(-channel_radius_cells, channel_radius_cells + 1):
+            for dx in range(-channel_radius_cells, channel_radius_cells + 1):
                 ny, nx = y + dy, x + dx
                 if 0 <= ny < h and 0 <= nx < w:
+                    if channel_radius <= 1e-6:
+                        if dy == 0 and dx == 0:
+                            modified[ny, nx] = max(0.0, modified[ny, nx] - carve_depth)
+                        continue
                     dist = np.hypot(dy, dx)
-                    if dist <= channel_width:
-                        # Raised-cosine (Hann) falloff with optional softness control
-                        t = (dist / channel_width) ** (1.0 / edge_softness)  # remap distance for gentler tails
-                        # falloff goes from 1 at center to 0 at the edge, smoothly
+                    if dist <= channel_radius:
+                        # Raised-cosine (Hann) falloff with optional softness control.
+                        t = min(dist / channel_radius, 1.0) ** (1.0 / falloff_softness)
                         falloff = 0.5 * (np.cos(np.pi * t) + 1.0)
 
                         carve_amount = carve_depth * falloff
@@ -349,8 +357,8 @@ def carve_channel_to_ocean(heightmap: np.ndarray, land_mask: np.ndarray,
     # Create mask of carved area
     carved_mask = np.zeros_like(land_mask, dtype=bool)
     for y, x in path_indices:
-        for dy in range(-channel_width-1, channel_width+2):
-            for dx in range(-channel_width-1, channel_width+2):
+        for dy in range(-channel_radius_cells - 1, channel_radius_cells + 2):
+            for dx in range(-channel_radius_cells - 1, channel_radius_cells + 2):
                 ny, nx = y + dy, x + dx
                 if 0 <= ny < h and 0 <= nx < w:
                     carved_mask[ny, nx] = True
@@ -366,6 +374,8 @@ def carve_channel_to_ocean(heightmap: np.ndarray, land_mask: np.ndarray,
 def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
                        min_sea_size: int = 20,
                        carve_depth: float = 0.1,
+                       channel_width: float = 5.0,
+                       channel_falloff: float = 1.2,
                        fill_height: float = 0.01,
                        water_level: float = 0.0) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -376,6 +386,8 @@ def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
         land_mask: Boolean mask where True = land
         min_sea_size: Minimum size for inland seas (smaller ones are filled)
         carve_depth: Channel depth relative to water level
+        channel_width: Channel radius in pixels/cells
+        channel_falloff: Edge softness for the carved channel profile
         fill_height: Height assigned to filled lakes above water level
         water_level: Absolute sea level used by the raster
         
@@ -407,7 +419,9 @@ def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
             print(f"  Carving channel for inland sea {i+1} (size: {sea_size})")
             modified_heightmap = carve_channel_to_ocean(
                 modified_heightmap, land_mask, sea_mask, ocean_mask,
-                carve_depth=float(carve_depth)
+                carve_depth=float(carve_depth),
+                channel_width=float(channel_width),
+                channel_falloff=float(channel_falloff),
             )
     
     # Recompute land mask after modifications

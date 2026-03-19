@@ -310,6 +310,8 @@
         "sea_level": "0.0",
         "min_lake_size": "30",
         "carve_depth": "0.1",
+        "channel_width": "5.0",
+        "channel_falloff": "1.2",
         "fill_height": "0.01"
       }
     },
