@@ -58,6 +58,7 @@ from .graph_nodes import (
     SampleTerrainGraphNode,
     SolveBaseGraphElevationNode,
     TerraceMaxDeltaNode,
+    UnbundleTerrainBundleNode,
 )
 from .heuristic_nodes import (
     AETHeuristicNode,
@@ -142,6 +143,7 @@ __all__ = [
     "ApplyRiverDowncuttingNode",
     "RasterizeGraphFieldNode",
     "BundleTerrainOutputsNode",
+    "UnbundleTerrainBundleNode",
     "BuildErosionParameterMapsNode",
     "ParticleErosionNode",
     "HeuristicMapNode",

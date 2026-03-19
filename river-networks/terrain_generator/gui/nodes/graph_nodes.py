@@ -605,6 +605,82 @@ class BundleTerrainOutputsNode(TerrainBaseNode):
         return bundle
 
 
+class UnbundleTerrainBundleNode(TerrainBaseNode):
+    """Expose the individual raster products stored in a terrain bundle."""
+
+    NODE_NAME = "Unbundle Terrain Bundle"
+    INPUT_TYPES = {"terrain_bundle": (PORT_TYPE_TERRAIN_BUNDLE,)}
+    OUTPUT_TYPES = {
+        "heightfield": (PORT_TYPE_HEIGHTFIELD,),
+        "land_mask": (PORT_TYPE_MASK,),
+        "river_volume": (PORT_TYPE_HEIGHTFIELD,),
+        "watershed_mask": (PORT_TYPE_HEIGHTFIELD,),
+        "deposition_map": (PORT_TYPE_HEIGHTFIELD,),
+        "rock_map": (PORT_TYPE_HEIGHTFIELD,),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(85, 125, 155)
+        self.add_input("terrain_bundle", color=(140, 200, 210))
+        self.add_output("heightfield", color=(150, 200, 150))
+        self.add_output("land_mask", color=(120, 180, 120))
+        self.add_output("river_volume", color=(140, 180, 220))
+        self.add_output("watershed_mask", color=(150, 200, 150))
+        self.add_output("deposition_map", color=(150, 200, 150))
+        self.add_output("rock_map", color=(150, 200, 150))
+
+    def execute(self):
+        bundle = self.get_input_data("terrain_bundle", expected_types=(PORT_TYPE_TERRAIN_BUNDLE,))
+        heightfield = bundle.heightfield
+        shape = heightfield.array.shape
+        land_mask = bundle.land_mask or MaskData(array=np.asarray(heightfield.array > 0.0, dtype=bool), name="Land Mask")
+        payload = {
+            "heightfield": heightfield,
+            "land_mask": land_mask,
+            "river_volume": HeightfieldData(
+                array=(
+                    np.asarray(bundle.river_volume, dtype=np.float32)
+                    if bundle.river_volume is not None
+                    else np.zeros(shape, dtype=np.float32)
+                ),
+                name="River Volume",
+            ),
+            "watershed_mask": HeightfieldData(
+                array=(
+                    np.asarray(bundle.watershed_mask, dtype=np.float32)
+                    if bundle.watershed_mask is not None
+                    else np.zeros(shape, dtype=np.float32)
+                ),
+                name="Watershed Mask",
+                metadata={"source_dtype": "int32"},
+            ),
+            "deposition_map": HeightfieldData(
+                array=(
+                    np.asarray(bundle.deposition_map, dtype=np.float32)
+                    if bundle.deposition_map is not None
+                    else np.zeros(shape, dtype=np.float32)
+                ),
+                name="Deposition Map",
+            ),
+            "rock_map": HeightfieldData(
+                array=(
+                    np.asarray(bundle.rock_map, dtype=np.float32)
+                    if bundle.rock_map is not None
+                    else np.zeros(shape, dtype=np.float32)
+                ),
+                name="Rock Map",
+                metadata={
+                    "source_dtype": "int32",
+                    "rock_types": list(bundle.rock_types),
+                    "rock_colors": list(bundle.rock_colors),
+                },
+            ),
+        }
+        self.set_output_data(payload)
+        return payload
+
+
 class BuildErosionParameterMapsNode(TerrainBaseNode):
     """Create per-cell parameter maps for erosion from a rock map."""
 
