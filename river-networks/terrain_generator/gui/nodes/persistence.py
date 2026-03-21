@@ -8,6 +8,17 @@ from typing import Any, Dict, Iterable, Optional
 
 
 GRAPH_SCHEMA_VERSION = 2
+GRAPH_AUTOSAVE_FILENAME = "autosaved.json"
+
+
+def default_graph_preset_directory() -> Path:
+    """Return the directory used for persisted graph presets."""
+    return Path(__file__).resolve().parents[2] / "presets"
+
+
+def default_graph_autosave_path() -> Path:
+    """Return the default autosave file path for the node graph."""
+    return default_graph_preset_directory() / GRAPH_AUTOSAVE_FILENAME
 
 
 def save_graph_payload(path: str, payload: Dict[str, Any]) -> Path:

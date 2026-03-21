@@ -56,6 +56,8 @@ from .nodes import (
     ContinuousAlbedoHeuristicNode,
     CurvatureHeuristicNode,
     CurveRemapNode,
+    default_graph_autosave_path,
+    default_graph_preset_directory,
     DomainWarpNode,
     FBMNode,
     FlowAccumulationHeuristicNode,
@@ -1188,7 +1190,12 @@ class NodeEditorWidget(QWidget):
             self._pin_node(created[pinned_id])
 
     def save_graph_to_file(self):
-        filename, _ = QFileDialog.getSaveFileName(self, "Save Node Graph", "", "Node Graph (*.terrain_graph.json *.json);;All Files (*)")
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Node Graph",
+            str(default_graph_preset_directory()),
+            "Node Graph (*.terrain_graph.json *.json);;All Files (*)",
+        )
         if not filename:
             return
         payload = self._serialize_graph(base_path=Path(filename).resolve().parent)
@@ -1200,12 +1207,33 @@ class NodeEditorWidget(QWidget):
             self._stop_current_execution()
             QMessageBox.information(self, "Load Deferred", "Stopped the active computation. Load the graph again once the run has finished.")
             return
-        filename, _ = QFileDialog.getOpenFileName(self, "Load Node Graph", "", "Node Graph (*.terrain_graph.json *.json);;All Files (*)")
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Node Graph",
+            str(default_graph_preset_directory()),
+            "Node Graph (*.terrain_graph.json *.json);;All Files (*)",
+        )
         if not filename:
             return
         payload = load_graph_payload(filename)
         self._apply_graph_payload(payload, base_path=Path(filename).resolve().parent)
         self.status_bar.setText(f"Loaded graph: {os.path.basename(filename)}")
+
+    def autosave_graph(self) -> Path:
+        """Persist the current graph to the default autosave preset."""
+        autosave_path = default_graph_autosave_path()
+        payload = self._serialize_graph(base_path=autosave_path.parent)
+        return save_graph_payload(str(autosave_path), payload)
+
+    def restore_autosaved_graph(self) -> bool:
+        """Load the default autosaved graph preset when available."""
+        autosave_path = default_graph_autosave_path()
+        if not autosave_path.exists():
+            return False
+        payload = load_graph_payload(str(autosave_path))
+        self._apply_graph_payload(payload, base_path=autosave_path.parent)
+        self.status_bar.setText(f"Restored autosaved graph: {autosave_path.name}")
+        return True
 
     def _on_nodes_deleted(self, nodes):
         for node in nodes:

@@ -94,6 +94,8 @@ from .heuristic_nodes import (
 )
 from .persistence import (
     GRAPH_SCHEMA_VERSION,
+    default_graph_autosave_path,
+    default_graph_preset_directory,
     build_graph_payload,
     load_graph_payload,
     save_graph_payload,
@@ -187,6 +189,8 @@ __all__ = [
     "ForestDensityHeuristicNode",
     "GroundcoverDensityHeuristicNode",
     "GRAPH_SCHEMA_VERSION",
+    "default_graph_preset_directory",
+    "default_graph_autosave_path",
     "build_graph_payload",
     "save_graph_payload",
     "load_graph_payload",

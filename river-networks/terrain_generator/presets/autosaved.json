@@ -276,8 +276,8 @@
       "node_type": "terrain.ClimateHeuristicBundleNode",
       "name": "Climate Maps",
       "pos": [
-        3584.8127673709573,
-        -223.54718073721543
+        3584.0,
+        -223.0
       ],
       "properties": {
         "cellsize_override": "0"
@@ -288,8 +288,8 @@
       "node_type": "terrain.TopographicHeuristicBundleNode",
       "name": "Topographic Maps",
       "pos": [
-        3627.890898731845,
-        196.00148903099546
+        3625.0,
+        343.0
       ],
       "properties": {
         "cellsize_override": "0",
@@ -303,8 +303,8 @@
       "node_type": "terrain.BiomeHeuristicBundleNode",
       "name": "Biome & Cover Maps",
       "pos": [
-        4038.038215626494,
-        -322.26515420184876
+        4038.0,
+        -322.0
       ],
       "properties": {
         "cellsize_override": "0"
@@ -320,6 +320,20 @@
       ],
       "properties": {
         "overlay_opacity": 0.7
+      }
+    },
+    {
+      "id": "64989528e5b24f6889fa2f09dc3837eb",
+      "node_type": "terrain.ThermalErosionNode",
+      "name": "Thermal Erosion",
+      "pos": [
+        3925.0,
+        122.0
+      ],
+      "properties": {
+        "thermal_iterations": "30",
+        "thermal_talus": "0.02",
+        "thermal_strength": "0.5"
       }
     }
   ],
@@ -405,12 +419,6 @@
     {
       "source_node_id": "erosion",
       "source_port": "terrain_bundle",
-      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
       "target_node_id": "48a8d1b0a334498d80bda00847cbd15d",
       "target_port": "terrain_bundle"
     },
@@ -418,6 +426,12 @@
       "source_node_id": "erosion",
       "source_port": "terrain_bundle",
       "target_node_id": "0f8d3159635144fbb2d7525da852cad0",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "64989528e5b24f6889fa2f09dc3837eb",
       "target_port": "terrain_bundle"
     },
     {
@@ -461,6 +475,18 @@
       "source_port": "climate_bundle",
       "target_node_id": "c032ba25a4454e04a1b156f933d75c2c",
       "target_port": "climate_bundle"
+    },
+    {
+      "source_node_id": "64989528e5b24f6889fa2f09dc3837eb",
+      "source_port": "terrain_bundle",
+      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "64989528e5b24f6889fa2f09dc3837eb",
+      "source_port": "talus_mask",
+      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
+      "target_port": "map_overlay"
     }
   ],
   "pinned_node_id": "82bc355393fd47cbb83ea42024f215a2",
