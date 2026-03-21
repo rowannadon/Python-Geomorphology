@@ -34,6 +34,7 @@ from .context import ExecutionCancellationToken, NodeExecutionCancelled, get_glo
 from .node_widgets import (
     CurveEditorNodeWidget,
     FilePathNodeWidget,
+    FloatSliderNodeWidget,
     PolygonEditorNodeWidget,
     parse_polygon_points,
     regular_polygon_points,
@@ -541,6 +542,7 @@ class ViewerNode(TerrainBaseNode):
     """Sink node that controls what is shown in the terrain viewport."""
 
     NODE_NAME = "Viewer"
+    DEFAULT_OVERLAY_OPACITY = 0.7
     INPUT_TYPES = {
         "terrain_bundle": (PORT_TYPE_TERRAIN_BUNDLE,),
         "heightfield": (PORT_TYPE_HEIGHTFIELD,),
@@ -553,6 +555,18 @@ class ViewerNode(TerrainBaseNode):
         self.add_input("terrain_bundle", color=(140, 200, 210))
         self.add_input("heightfield", color=(150, 200, 150))
         self.add_input("map_overlay", color=(180, 180, 120))
+        overlay_opacity_widget = FloatSliderNodeWidget(
+            self.view,
+            "overlay_opacity",
+            "Overlay Opacity",
+            value=self.DEFAULT_OVERLAY_OPACITY,
+            min_value=0.0,
+            max_value=1.0,
+            step=0.01,
+            display_multiplier=100.0,
+            display_suffix="%",
+        )
+        self.add_custom_widget(overlay_opacity_widget)
 
     @staticmethod
     def _terrain_shape(payload: HeightfieldData | TerrainBundleData) -> tuple[int, int]:
@@ -574,6 +588,9 @@ class ViewerNode(TerrainBaseNode):
             return preview_bundle
         return overlay.base_heightfield
 
+    def _get_overlay_opacity(self) -> float:
+        return max(0.0, min(1.0, _parse_float(self.get_property("overlay_opacity"), self.DEFAULT_OVERLAY_OPACITY)))
+
     def execute(self):
         overlay = self.get_input_overlay(required=False)
         terrain_source = self._resolve_terrain_source(overlay)
@@ -592,6 +609,7 @@ class ViewerNode(TerrainBaseNode):
             )
 
         metadata = dict(overlay.metadata)
+        metadata["overlay_opacity"] = self._get_overlay_opacity()
         if isinstance(terrain_source, TerrainBundleData):
             metadata["preview_bundle"] = terrain_source
             base_heightfield = terrain_source.heightfield

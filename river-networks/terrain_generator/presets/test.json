@@ -490,16 +490,24 @@
       }
     },
     {
-      "id": "f605a2791fea4302ba74044ceb9abeb1",
+      "id": "386842696c304573a9832bb3d4ce2035",
       "node_type": "terrain.ViewerNode",
       "name": "Viewer",
       "pos": [
-        5257.438771442386,
-        -644.4429617888242
+        3408.0,
+        631.0
       ],
-      "properties": {
-        "overlay_opacity": 0.3
-      }
+      "properties": {}
+    },
+    {
+      "id": "e7ef696cfbab4abf868e169862199b15",
+      "node_type": "terrain.WatershedMaskOverlayNode",
+      "name": "Watershed Mask Overlay",
+      "pos": [
+        2850.195495771948,
+        354.6072954028383
+      ],
+      "properties": {}
     }
   ],
   "connections": [
@@ -570,9 +578,21 @@
       "target_port": "river_network"
     },
     {
+      "source_node_id": "rivers",
+      "source_port": "river_network",
+      "target_node_id": "e7ef696cfbab4abf868e169862199b15",
+      "target_port": "river_network"
+    },
+    {
       "source_node_id": "downcut",
       "source_port": "terrain_graph",
       "target_node_id": "bundle",
+      "target_port": "terrain_graph"
+    },
+    {
+      "source_node_id": "downcut",
+      "source_port": "terrain_graph",
+      "target_node_id": "e7ef696cfbab4abf868e169862199b15",
       "target_port": "terrain_graph"
     },
     {
@@ -698,14 +718,8 @@
     {
       "source_node_id": "erosion",
       "source_port": "terrain_bundle",
-      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
+      "target_node_id": "386842696c304573a9832bb3d4ce2035",
       "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "03e837a411434cf2afabee98ad0ce9d8",
-      "source_port": "map_overlay",
-      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
-      "target_port": "map_overlay"
     },
     {
       "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
@@ -916,8 +930,14 @@
       "source_port": "terrain_graph",
       "target_node_id": "downcut",
       "target_port": "terrain_graph"
+    },
+    {
+      "source_node_id": "e7ef696cfbab4abf868e169862199b15",
+      "source_port": "map_overlay",
+      "target_node_id": "386842696c304573a9832bb3d4ce2035",
+      "target_port": "map_overlay"
     }
   ],
-  "pinned_node_id": "f605a2791fea4302ba74044ceb9abeb1",
+  "pinned_node_id": "386842696c304573a9832bb3d4ce2035",
   "metadata": {}
 }

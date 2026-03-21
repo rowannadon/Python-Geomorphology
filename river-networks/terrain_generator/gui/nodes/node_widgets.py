@@ -8,7 +8,7 @@ from typing import Optional, Sequence
 
 from NodeGraphQt.widgets.node_widgets import NodeBaseWidget
 from PyQt5 import QtCore, QtGui
-from PyQt5.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from ..curves_widget import CurvesGraphWidget, DEFAULT_LINEAR_CURVE, parse_curve_points, serialize_curve_points
 
@@ -316,6 +316,116 @@ class FilePathNodeWidget(NodeBaseWidget):
             return
         self._path_edit.setText(value)
         self._sync_tooltips()
+        self.on_value_changed()
+
+
+class FloatSliderNodeWidget(NodeBaseWidget):
+    """Numeric slider widget that stores a float value in node properties."""
+
+    def __init__(
+        self,
+        parent=None,
+        name: str = "",
+        label: str = "",
+        *,
+        value: float = 0.0,
+        min_value: float = 0.0,
+        max_value: float = 1.0,
+        step: float = 0.01,
+        display_multiplier: float = 1.0,
+        display_suffix: str = "",
+    ):
+        super().__init__(parent, name, label)
+        self._updating = False
+        self._min = float(min_value)
+        self._max = max(self._min, float(max_value))
+        self._step = max(float(step), 1e-6)
+        self._display_multiplier = float(display_multiplier)
+        self._display_suffix = str(display_suffix)
+
+        if self._step < 1.0:
+            step_text = f"{self._step:.12g}"
+            self._display_decimals = max(0, len(step_text.partition(".")[2].rstrip("0")))
+        else:
+            self._display_decimals = 0
+
+        self._slider_steps = max(1, int(round((self._max - self._min) / self._step)))
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+
+        self._slider = QSlider(QtCore.Qt.Horizontal)
+        self._slider.setRange(0, self._slider_steps)
+        self._slider.valueChanged.connect(self._on_slider_changed)
+        row.addWidget(self._slider, stretch=1)
+
+        self._value_label = QLabel("")
+        self._value_label.setMinimumWidth(46)
+        self._value_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        row.addWidget(self._value_label)
+
+        layout.addLayout(row)
+        self.set_custom_widget(container)
+        self.widget().setMaximumWidth(230)
+        self.set_value(value)
+
+    def _clamp(self, value: float) -> float:
+        return max(self._min, min(self._max, float(value)))
+
+    def _slider_position_to_value(self, position: int) -> float:
+        value = self._min + (self._step * int(position))
+        return self._clamp(value)
+
+    def _value_to_slider_position(self, value: float) -> int:
+        clamped = self._clamp(value)
+        return max(0, min(self._slider_steps, int(round((clamped - self._min) / self._step))))
+
+    def _format_display_value(self, value: float) -> str:
+        display_value = float(value) * self._display_multiplier
+        if self._display_decimals > 0:
+            text = f"{display_value:.{self._display_decimals}f}"
+        else:
+            text = str(int(round(display_value)))
+        if self._display_suffix:
+            text = f"{text}{self._display_suffix}"
+        return text
+
+    def _update_label(self):
+        value = self._slider_position_to_value(self._slider.value())
+        self._value_label.setText(self._format_display_value(value))
+
+    def _on_slider_changed(self, _position: int):
+        self._update_label()
+        if not self._updating:
+            self.on_value_changed()
+
+    def get_value(self):
+        value = self._slider_position_to_value(self._slider.value())
+        return round(value, 6)
+
+    def set_value(self, value=0.0):
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = self._min
+
+        new_position = self._value_to_slider_position(parsed)
+        if new_position == self._slider.value():
+            self._update_label()
+            return
+
+        self._updating = True
+        try:
+            self._slider.setValue(new_position)
+            self._update_label()
+        finally:
+            self._updating = False
         self.on_value_changed()
 
 

@@ -76,7 +76,6 @@ from .nodes import (
     PrecipitationHeuristicNode,
     ProjectSettingsNode,
     RasterizeGraphFieldNode,
-    RockLayerOverlayNode,
     RockStackWarpNode,
     SampleTerrainGraphNode,
     save_graph_payload,
@@ -97,6 +96,7 @@ from .nodes import (
     terrain_data_from_heightfield,
     UnbundleTerrainBundleNode,
     ViewerNode,
+    WatershedMaskOverlayNode,
     WorldSettingsNode,
     port_type_for_payload,
     SettingsData,
@@ -142,8 +142,8 @@ NODE_MENU_GROUPS: Tuple[Tuple[str, Tuple[Tuple[str, Type[TerrainBaseNode]], ...]
             ("Terrace/Max Delta", TerraceMaxDeltaNode),
             ("Rock Stack Warp", RockStackWarpNode),
             ("Assign Rock Layers", AssignRockLayersNode),
-            ("Rock Layer Overlay", RockLayerOverlayNode),
             ("Compute River Network", ComputeRiverNetworkNode),
+            ("Watershed Mask Overlay", WatershedMaskOverlayNode),
             ("Apply River Downcutting", ApplyRiverDowncuttingNode),
             ("Rasterize Graph Field", RasterizeGraphFieldNode),
             ("Bundle Terrain Outputs", BundleTerrainOutputsNode),
@@ -940,7 +940,14 @@ class NodeEditorWidget(QWidget):
                 terrain = terrain_data_from_bundle(preview_bundle)
             else:
                 terrain = terrain_data_from_heightfield(payload.base_heightfield)
+            overlay_opacity = payload.metadata.get("overlay_opacity", ViewerNode.DEFAULT_OVERLAY_OPACITY)
+            try:
+                overlay_opacity = float(overlay_opacity)
+            except (TypeError, ValueError):
+                overlay_opacity = ViewerNode.DEFAULT_OVERLAY_OPACITY
+            overlay_opacity = max(0.0, min(1.0, overlay_opacity))
             self.node_viewport.set_terrain(terrain)
+            self.node_viewport.set_overlay_opacity(overlay_opacity)
             self.node_viewport.set_overlay_image(payload.rgba)
             self.node_viewport.set_overlay_visible(True)
         elif isinstance(payload, SettingsData):

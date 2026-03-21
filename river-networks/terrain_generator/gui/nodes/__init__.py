@@ -54,12 +54,12 @@ from .graph_nodes import (
     ComputeRiverNetworkNode,
     ParticleErosionNode,
     RasterizeGraphFieldNode,
-    RockLayerOverlayNode,
     RockStackWarpNode,
     SampleTerrainGraphNode,
     SolveBaseGraphElevationNode,
     TerraceMaxDeltaNode,
     UnbundleTerrainBundleNode,
+    WatershedMaskOverlayNode,
 )
 from .heuristic_nodes import (
     AETHeuristicNode,
@@ -140,7 +140,7 @@ __all__ = [
     "TerraceMaxDeltaNode",
     "RockStackWarpNode",
     "AssignRockLayersNode",
-    "RockLayerOverlayNode",
+    "WatershedMaskOverlayNode",
     "ComputeRiverNetworkNode",
     "ApplyRiverDowncuttingNode",
     "RasterizeGraphFieldNode",

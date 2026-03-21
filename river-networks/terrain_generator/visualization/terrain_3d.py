@@ -63,6 +63,7 @@ class Terrain3DRenderer:
         self.overlay_texture_id = None
         self.overlay_dirty = False
         self.overlay_enabled = False
+        self.overlay_opacity = 0.7
         self.vertex_buffer_id = None
         self.color_buffer_id = None
         self.index_buffer_id = None
@@ -279,7 +280,7 @@ class Terrain3DRenderer:
             glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
             glEnableClientState(GL_TEXTURE_COORD_ARRAY)
             glDisableClientState(GL_COLOR_ARRAY)
-            glColor4f(1.0, 1.0, 1.0, 0.7)
+            glColor4f(1.0, 1.0, 1.0, self.overlay_opacity)
 
             glBindBuffer(GL_ARRAY_BUFFER, self.vertex_buffer_id)
             glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
@@ -376,6 +377,14 @@ class Terrain3DRenderer:
         """Enable or disable overlay rendering."""
         self.overlay_enabled = bool(enabled) and self.overlay_image is not None
         self.update_colors()
+
+    def set_overlay_opacity(self, opacity: float):
+        """Set overlay blend opacity in the [0, 1] range."""
+        try:
+            value = float(opacity)
+        except (TypeError, ValueError):
+            value = 0.7
+        self.overlay_opacity = max(0.0, min(1.0, value))
 
     def _compute_lighting_factors(self) -> np.ndarray:
         """Compute per-vertex lighting factors (0-1)."""
@@ -542,6 +551,11 @@ class TerrainViewport(QOpenGLWidget):
     def set_overlay_visible(self, visible: bool):
         """Enable or disable overlay rendering."""
         self.renderer.set_overlay_enabled(visible)
+        self.update()
+
+    def set_overlay_opacity(self, opacity: float):
+        """Set overlay blend opacity in the [0, 1] range."""
+        self.renderer.set_overlay_opacity(opacity)
         self.update()
 
     def initializeGL(self):

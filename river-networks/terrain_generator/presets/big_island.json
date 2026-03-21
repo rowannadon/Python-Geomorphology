@@ -330,16 +330,6 @@
       }
     },
     {
-      "id": "264f912e5d1d47efb9ca33b2f345c57c",
-      "node_type": "terrain.RockLayerOverlayNode",
-      "name": "Rock Layer Overlay",
-      "pos": [
-        3041.0,
-        -454.0
-      ],
-      "properties": {}
-    },
-    {
       "id": "8270965b0baa4a02b3b91cf7b1ef3aae",
       "node_type": "terrain.TPIHeuristicNode",
       "name": "TPI",
@@ -424,12 +414,6 @@
       "source_node_id": "downcut",
       "source_port": "terrain_graph",
       "target_node_id": "bundle",
-      "target_port": "terrain_graph"
-    },
-    {
-      "source_node_id": "downcut",
-      "source_port": "terrain_graph",
-      "target_node_id": "264f912e5d1d47efb9ca33b2f345c57c",
       "target_port": "terrain_graph"
     },
     {

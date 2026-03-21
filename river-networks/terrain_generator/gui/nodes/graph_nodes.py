@@ -473,7 +473,7 @@ class RasterizeGraphFieldNode(TerrainBaseNode):
         self.add_input("terrain_graph", color=(180, 120, 200))
         self.add_input("river_network", color=(100, 160, 220))
         self.add_output("heightfield", color=(150, 200, 150))
-        self.add_combo_menu("field_name", "Field", items=["point_height", "variable_max_delta", "rock_assignments", "river_volume", "watershed"])
+        self.add_combo_menu("field_name", "Field", items=["point_height", "variable_max_delta", "rock_assignments", "river_volume"])
         self.set_property("field_name", "point_height")
 
     def execute(self):
@@ -494,9 +494,6 @@ class RasterizeGraphFieldNode(TerrainBaseNode):
         elif field_name == "river_volume":
             river_network = self.get_input_data("river_network", expected_types=(PORT_TYPE_RIVER_NETWORK,))
             arr = _rasterize_graph_height(graph, river_network.volume)
-        elif field_name == "watershed":
-            river_network = self.get_input_data("river_network", expected_types=(PORT_TYPE_RIVER_NETWORK,))
-            arr = _render_categorical_map(graph, river_network.watershed).astype(np.float32)
         else:
             raise ValueError(f"Unsupported field '{field_name}'.")
         payload = HeightfieldData(array=np.asarray(arr, dtype=np.float32), name=self._base_name)
@@ -504,41 +501,71 @@ class RasterizeGraphFieldNode(TerrainBaseNode):
         return payload
 
 
-class RockLayerOverlayNode(TerrainBaseNode):
-    """Rasterize rock assignments and display them as a terrain overlay."""
+class WatershedMaskOverlayNode(TerrainBaseNode):
+    """Rasterize watershed ids into an overlay for terrain preview."""
 
-    NODE_NAME = "Rock Layer Overlay"
-    INPUT_TYPES = {"terrain_graph": (PORT_TYPE_TERRAIN_GRAPH,)}
+    NODE_NAME = "Watershed Mask Overlay"
+    INPUT_TYPES = {
+        "terrain_graph": (PORT_TYPE_TERRAIN_GRAPH,),
+        "river_network": (PORT_TYPE_RIVER_NETWORK,),
+        "terrain_bundle": (PORT_TYPE_TERRAIN_BUNDLE,),
+        "heightfield": (PORT_TYPE_HEIGHTFIELD,),
+    }
     OUTPUT_TYPES = {"map_overlay": (PORT_TYPE_MAP_OVERLAY,)}
 
     def __init__(self):
         super().__init__()
-        self.set_color(155, 105, 80)
+        self.set_color(85, 120, 170)
         self.add_input("terrain_graph", color=(180, 120, 200))
+        self.add_input("river_network", color=(100, 160, 220))
+        self.add_input("terrain_bundle", color=(140, 200, 210))
+        self.add_input("heightfield", color=(150, 200, 150))
         self.add_output("map_overlay", color=(180, 180, 120))
 
     def execute(self):
         graph = self.get_input_data("terrain_graph", expected_types=(PORT_TYPE_TERRAIN_GRAPH,))
-        if graph.rock_assignments is None:
-            raise ValueError("Graph has no rock assignments.")
-        base_heightfield = _heightfield_from_graph(graph, name="Rock Layer Base Height")
-        rock_map = _render_categorical_map(graph, graph.rock_assignments).astype(np.int32)
-        emergent_land = np.asarray(base_heightfield.array > 0.0, dtype=bool)
+        river_network = self.get_input_data("river_network", expected_types=(PORT_TYPE_RIVER_NETWORK,))
+        bundle = self.get_input_data("terrain_bundle", required=False, expected_types=(PORT_TYPE_TERRAIN_BUNDLE,))
+        preview_heightfield = self.get_input_heightfield("heightfield", required=False)
+
+        watershed_mask = np.ascontiguousarray(
+            _render_categorical_map(graph, river_network.watershed).astype(np.int32)
+        )
+        expected_shape = watershed_mask.shape
+        preview_bundle = None
+        if isinstance(bundle, TerrainBundleData):
+            base_heightfield = bundle.heightfield
+            preview_bundle = bundle
+        elif isinstance(preview_heightfield, HeightfieldData):
+            base_heightfield = preview_heightfield
+        else:
+            base_heightfield = _heightfield_from_graph(graph, name="Watershed Base Height")
+            land_mask = np.asarray(base_heightfield.array > 0.0, dtype=bool)
+            preview_bundle = TerrainBundleData(
+                heightfield=base_heightfield,
+                land_mask=MaskData(array=land_mask, name="Preview Land Mask"),
+            )
+
+        # Use the preview terrain itself to derive overlay alpha. This keeps
+        # visualization aligned even when a carried land-mask payload comes from
+        # a different raster convention.
+        land_mask = np.asarray(base_heightfield.array > 0.0, dtype=bool)
+
+        if base_heightfield.array.shape != expected_shape:
+            raise ValueError(
+                f"Watershed overlay shape {expected_shape} does not match preview terrain shape {base_heightfield.array.shape}."
+            )
+
         overlay = overlay_from_labels(
-            "rock_assignments",
+            "watershed_mask",
             self._base_name,
-            rock_map,
+            watershed_mask,
             base_heightfield,
-            land_mask=emergent_land,
+            land_mask=land_mask,
         )
-        preview_bundle = TerrainBundleData(
-            heightfield=base_heightfield,
-            land_mask=MaskData(array=emergent_land, name="Preview Land Mask"),
-            rock_map=rock_map,
-            rock_types=tuple(layer.name for layer in graph.rock_layers),
-            rock_colors=tuple(graph.rock_colors),
-        )
-        overlay.metadata["preview_bundle"] = preview_bundle
+        if preview_bundle is not None:
+            overlay.metadata["preview_bundle"] = preview_bundle
+        overlay.metadata["source_dtype"] = "int32"
         self.set_output_data(overlay)
         return overlay
 
@@ -577,11 +604,9 @@ class BundleTerrainOutputsNode(TerrainBaseNode):
             else:
                 land_mask = MaskData(array=height_arr > 0.0, name="Land Mask")
         river_volume = None
-        watershed_mask = None
         if river_network is not None:
-            self.emit_progress(0.45, "Rasterizing river network")
+            self.emit_progress(0.45, "Rasterizing river volume")
             river_volume = _rasterize_graph_height(graph, river_network.volume).astype(np.float32)
-            watershed_mask = _render_categorical_map(graph, river_network.watershed)
             self.check_cancelled()
         rock_map = None
         if graph.rock_assignments is not None:
@@ -592,7 +617,6 @@ class BundleTerrainOutputsNode(TerrainBaseNode):
             heightfield=heightfield,
             land_mask=land_mask,
             river_volume=river_volume,
-            watershed_mask=watershed_mask,
             deposition_map=np.zeros(height_arr.shape, dtype=np.float32),
             rock_map=rock_map,
             rock_types=tuple(layer.name for layer in graph.rock_layers),
@@ -615,7 +639,6 @@ class UnbundleTerrainBundleNode(TerrainBaseNode):
         "heightfield": (PORT_TYPE_HEIGHTFIELD,),
         "land_mask": (PORT_TYPE_MASK,),
         "river_volume": (PORT_TYPE_HEIGHTFIELD,),
-        "watershed_mask": (PORT_TYPE_MAP_OVERLAY,),
         "deposition_map": (PORT_TYPE_MAP_OVERLAY,),
         "rock_map": (PORT_TYPE_MAP_OVERLAY,),
     }
@@ -627,7 +650,6 @@ class UnbundleTerrainBundleNode(TerrainBaseNode):
         self.add_output("heightfield", color=(150, 200, 150))
         self.add_output("land_mask", color=(120, 180, 120))
         self.add_output("river_volume", color=(140, 180, 220))
-        self.add_output("watershed_mask", color=(180, 180, 120))
         self.add_output("deposition_map", color=(180, 180, 120))
         self.add_output("rock_map", color=(180, 180, 120))
 
@@ -636,11 +658,7 @@ class UnbundleTerrainBundleNode(TerrainBaseNode):
         heightfield = bundle.heightfield
         shape = heightfield.array.shape
         land_mask = bundle.land_mask or MaskData(array=np.asarray(heightfield.array > 0.0, dtype=bool), name="Land Mask")
-        watershed_array = (
-            np.asarray(bundle.watershed_mask, dtype=np.int32)
-            if bundle.watershed_mask is not None
-            else np.zeros(shape, dtype=np.int32)
-        )
+        overlay_land_mask = np.asarray(heightfield.array > 0.0, dtype=bool)
         deposition_array = (
             np.asarray(bundle.deposition_map, dtype=np.float32)
             if bundle.deposition_map is not None
@@ -651,28 +669,21 @@ class UnbundleTerrainBundleNode(TerrainBaseNode):
             if bundle.rock_map is not None
             else np.zeros(shape, dtype=np.int32)
         )
-        watershed_overlay = overlay_from_labels(
-            "watershed_mask",
-            "Watershed Mask",
-            watershed_array,
-            heightfield,
-            land_mask=np.asarray(land_mask.array, dtype=bool),
-        )
         deposition_overlay = overlay_from_deposition(
             "deposition_map",
             "Deposition Map",
             deposition_array,
             heightfield,
-            land_mask=np.asarray(land_mask.array, dtype=bool),
+            land_mask=overlay_land_mask,
         )
         rock_overlay = overlay_from_labels(
             "rock_map",
             "Rock Map",
             rock_array,
             heightfield,
-            land_mask=np.asarray(land_mask.array, dtype=bool),
+            land_mask=overlay_land_mask,
         )
-        for overlay in (watershed_overlay, deposition_overlay, rock_overlay):
+        for overlay in (deposition_overlay, rock_overlay):
             overlay.metadata["preview_bundle"] = bundle
         payload = {
             "heightfield": heightfield,
@@ -685,11 +696,9 @@ class UnbundleTerrainBundleNode(TerrainBaseNode):
                 ),
                 name="River Volume",
             ),
-            "watershed_mask": watershed_overlay,
             "deposition_map": deposition_overlay,
             "rock_map": rock_overlay,
         }
-        watershed_overlay.metadata["source_dtype"] = "int32"
         deposition_overlay.metadata["source_dtype"] = "float32"
         rock_overlay.metadata.update(
             {
