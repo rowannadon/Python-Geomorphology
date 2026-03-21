@@ -248,11 +248,31 @@ def identify_inland_seas(land_mask: np.ndarray) -> Tuple[np.ndarray, List[np.nda
     
     return ocean_mask, inland_seas
 
+def _raised_cosine_profile(distance_ratio: float, softness: float = 1.0) -> float:
+    """Return a softened raised-cosine profile for a normalized distance."""
+    t = min(max(float(distance_ratio), 0.0), 1.0) ** (1.0 / max(float(softness), 0.05))
+    return float(0.5 * (np.cos(np.pi * t) + 1.0))
+
+
+def _channel_carve_profile(distance_ratio: float, channel_softness: float, slope_softness: float) -> float:
+    """Blend a base channel profile with a bank-specific falloff near the edges."""
+    ratio = min(max(float(distance_ratio), 0.0), 1.0)
+    base_profile = _raised_cosine_profile(ratio, channel_softness)
+    bank_profile = _raised_cosine_profile(ratio, slope_softness)
+
+    # Keep the channel center driven mostly by the original profile and let the
+    # bank control take over progressively toward the edges.
+    edge_mix = min(max((ratio - 0.35) / 0.65, 0.0), 1.0)
+    edge_mix = edge_mix * edge_mix * (3.0 - 2.0 * edge_mix)
+    return float(base_profile * (1.0 - edge_mix) + bank_profile * edge_mix)
+
+
 def carve_channel_to_ocean(heightmap: np.ndarray, land_mask: np.ndarray,
                           inland_sea_mask: np.ndarray, ocean_mask: np.ndarray,
                           carve_depth: float = 0.05,
                           channel_width: float = 5.0,
-                          channel_falloff: float = 1.2) -> np.ndarray:
+                          channel_falloff: float = 1.2,
+                          slope_falloff: float = 1.2) -> np.ndarray:
     """
     Carve a channel from inland sea to ocean.
     
@@ -264,6 +284,7 @@ def carve_channel_to_ocean(heightmap: np.ndarray, land_mask: np.ndarray,
         carve_depth: How deep to carve the channel
         channel_width: Channel radius in pixels/cells
         channel_falloff: Edge softness for the carved channel profile
+        slope_falloff: Bank-specific softness used near the channel edges
         
     Returns:
         Modified heightmap with carved channel
@@ -331,6 +352,7 @@ def carve_channel_to_ocean(heightmap: np.ndarray, land_mask: np.ndarray,
     # Create a smooth channel profile.
     channel_radius = max(float(channel_width), 0.0)
     falloff_softness = max(float(channel_falloff), 0.05)
+    slope_softness = max(float(slope_falloff), 0.05)
     channel_radius_cells = max(int(np.ceil(channel_radius)), 0)
 
     for y, x in path_indices:
@@ -345,11 +367,11 @@ def carve_channel_to_ocean(heightmap: np.ndarray, land_mask: np.ndarray,
                         continue
                     dist = np.hypot(dy, dx)
                     if dist <= channel_radius:
-                        # Raised-cosine (Hann) falloff with optional softness control.
-                        t = min(dist / channel_radius, 1.0) ** (1.0 / falloff_softness)
-                        falloff = 0.5 * (np.cos(np.pi * t) + 1.0)
-
-                        carve_amount = carve_depth * falloff
+                        carve_amount = float(carve_depth) * _channel_carve_profile(
+                            dist / channel_radius,
+                            falloff_softness,
+                            slope_softness,
+                        )
                         modified[ny, nx] = max(0.0, modified[ny, nx] - carve_amount)
     
     # Smooth the carved area
@@ -376,6 +398,7 @@ def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
                        carve_depth: float = 0.1,
                        channel_width: float = 5.0,
                        channel_falloff: float = 1.2,
+                       slope_falloff: float = 1.2,
                        fill_height: float = 0.01,
                        water_level: float = 0.0) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -388,6 +411,7 @@ def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
         carve_depth: Channel depth relative to water level
         channel_width: Channel radius in pixels/cells
         channel_falloff: Edge softness for the carved channel profile
+        slope_falloff: Bank-specific softness used near the channel edges
         fill_height: Height assigned to filled lakes above water level
         water_level: Absolute sea level used by the raster
         
@@ -422,6 +446,7 @@ def connect_inland_seas(heightmap: np.ndarray, land_mask: np.ndarray,
                 carve_depth=float(carve_depth),
                 channel_width=float(channel_width),
                 channel_falloff=float(channel_falloff),
+                slope_falloff=float(slope_falloff),
             )
     
     # Recompute land mask after modifications

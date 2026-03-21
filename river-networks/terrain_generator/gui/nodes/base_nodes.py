@@ -1362,6 +1362,7 @@ class ConnectInlandSeasNode(TerrainBaseNode):
         self.add_text_input("carve_depth", "Carve Depth", text="0.1")
         self.add_text_input("channel_width", "Channel Width (km)", text="7.5")
         self.add_text_input("channel_falloff", "Channel Falloff", text="1.2")
+        self.add_text_input("slope_falloff", "Slope Falloff", text="1.2")
         self.add_text_input("fill_height", "Fill Height", text="0.01")
 
     def execute(self):
@@ -1374,6 +1375,10 @@ class ConnectInlandSeasNode(TerrainBaseNode):
         else:
             land_mask_array = np.asarray(land_mask_input.array, dtype=bool)
             land_mask_name = land_mask_input.name
+        channel_falloff = max(_parse_float(self.get_property("channel_falloff"), 1.2), 0.05)
+        slope_falloff = _parse_float(self.get_property("slope_falloff"), channel_falloff)
+        if slope_falloff <= 0.0:
+            slope_falloff = channel_falloff
         adjusted_height, adjusted_land = connect_inland_seas(
             source.array,
             land_mask_array,
@@ -1387,7 +1392,8 @@ class ConnectInlandSeasNode(TerrainBaseNode):
                 ),
                 0.0,
             ),
-            channel_falloff=max(_parse_float(self.get_property("channel_falloff"), 1.2), 0.05),
+            channel_falloff=channel_falloff,
+            slope_falloff=max(slope_falloff, 0.05),
             fill_height=max(_parse_float(self.get_property("fill_height"), 0.01), 0.0),
             water_level=sea_level,
         )

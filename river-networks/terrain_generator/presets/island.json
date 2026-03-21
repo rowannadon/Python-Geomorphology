@@ -238,8 +238,9 @@
         "sea_level": "0.0",
         "min_lake_size": "30",
         "carve_depth": "0.1",
-        "channel_width": "0.078125",
-        "channel_falloff": "1.2",
+        "channel_width": "0.25",
+        "channel_falloff": "4",
+        "slope_falloff": "2.5",
         "fill_height": "0.01"
       }
     },
@@ -263,8 +264,8 @@
       "node_type": "terrain.ViewerNode",
       "name": "Viewer",
       "pos": [
-        4664.8093954692795,
-        -116.92654911818425
+        4664.0,
+        -116.0
       ],
       "properties": {
         "overlay_opacity": 0.58
@@ -275,8 +276,8 @@
       "node_type": "terrain.ClimateHeuristicBundleNode",
       "name": "Climate Maps",
       "pos": [
-        3650.5555221156637,
-        -74.63566680366463
+        3650.0,
+        -74.0
       ],
       "properties": {
         "cellsize_override": "0"
@@ -287,11 +288,14 @@
       "node_type": "terrain.TopographicHeuristicBundleNode",
       "name": "Topographic Maps",
       "pos": [
-        3643.7579060553417,
-        435.4631946798595
+        3643.0,
+        435.0
       ],
       "properties": {
-        "cellsize_override": "0"
+        "cellsize_override": "0",
+        "tpi_radius_m": "25.0",
+        "svf_dirs": "16",
+        "svf_radius": "100.0"
       }
     },
     {
@@ -299,11 +303,23 @@
       "node_type": "terrain.BiomeHeuristicBundleNode",
       "name": "Biome & Cover Maps",
       "pos": [
-        4093.1467185934525,
-        166.76840266007025
+        4093.0,
+        166.0
       ],
       "properties": {
         "cellsize_override": "0"
+      }
+    },
+    {
+      "id": "82bc355393fd47cbb83ea42024f215a2",
+      "node_type": "terrain.ViewerNode",
+      "name": "Viewer 1",
+      "pos": [
+        475.61342134860377,
+        324.1876970971133
+      ],
+      "properties": {
+        "overlay_opacity": 0.7
       }
     }
   ],
@@ -418,6 +434,12 @@
     },
     {
       "source_node_id": "4b1edcc28940451ca32af86d81e3de15",
+      "source_port": "heightfield",
+      "target_node_id": "82bc355393fd47cbb83ea42024f215a2",
+      "target_port": "heightfield"
+    },
+    {
+      "source_node_id": "4b1edcc28940451ca32af86d81e3de15",
       "source_port": "land_mask",
       "target_node_id": "sample_graph",
       "target_port": "land_mask"
@@ -447,6 +469,6 @@
       "target_port": "map_overlay"
     }
   ],
-  "pinned_node_id": "f605a2791fea4302ba74044ceb9abeb1",
+  "pinned_node_id": "82bc355393fd47cbb83ea42024f215a2",
   "metadata": {}
 }
