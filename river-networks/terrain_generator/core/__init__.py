@@ -3,12 +3,14 @@
 from .terrain import TerrainGenerator, TerrainParameters, TerrainData
 from .noise import ConsistentFBMNoise
 from .rivers import RiverGenerator, RiverNetwork
+from .thermal_erosion import ThermalErosion
 from .utils import normalize, gaussian_blur, gaussian_gradient, _gray_to_rgba_norm, _deposition_to_rgba, _build_palette_u8, _labels_to_rgba
 
 __all__ = [
     'TerrainGenerator', 'TerrainParameters', 'TerrainData',
     'ConsistentFBMNoise',
     'RiverGenerator', 'RiverNetwork',
+    'ThermalErosion',
     'normalize', 'gaussian_blur', 'gaussian_gradient', '_gray_to_rgba_norm', 
     '_deposition_to_rgba', '_build_palette_u8', '_labels_to_rgba'
 ]

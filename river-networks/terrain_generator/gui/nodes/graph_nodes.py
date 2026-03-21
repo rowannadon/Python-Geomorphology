@@ -12,6 +12,7 @@ import numpy as np
 from ...config import RockLayerConfig, normalize_layer_inputs
 from ...core import RiverGenerator, TerrainGenerator, TerrainParameters, normalize
 from ...core.particle_erosion import ParticleErosion
+from ...core.thermal_erosion import ThermalErosion
 from ...core.utils import gaussian_gradient, render_triangulation
 from .base_nodes import TerrainBaseNode, _distance_km_to_cells, _parse_float, _parse_int, _parse_points_text
 from .contracts import (
@@ -28,6 +29,7 @@ from .contracts import (
     TerrainGraphData,
     overlay_from_deposition,
     overlay_from_labels,
+    overlay_from_scalar,
 )
 
 
@@ -823,3 +825,90 @@ class ParticleErosionNode(TerrainBaseNode):
         self.emit_progress(1.0, "Particle erosion complete")
         self.set_output_data(updated)
         return updated
+
+
+class ThermalErosionNode(TerrainBaseNode):
+    """Apply simple relaxation-based thermal erosion to a raster terrain bundle."""
+
+    NODE_NAME = "Thermal Erosion"
+    INPUT_TYPES = {"terrain_bundle": (PORT_TYPE_TERRAIN_BUNDLE,)}
+    OUTPUT_TYPES = {
+        "terrain_bundle": (PORT_TYPE_TERRAIN_BUNDLE,),
+        "talus_mask": (PORT_TYPE_MAP_OVERLAY,),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(170, 110, 70)
+        self.add_input("terrain_bundle", color=(140, 200, 210))
+        self.add_output("terrain_bundle", color=(140, 200, 210))
+        self.add_output("talus_mask", color=(180, 180, 120))
+        self.add_text_input("thermal_iterations", "Iterations", text="30")
+        self.add_text_input("thermal_talus", "Talus Threshold", text="0.02")
+        self.add_text_input("thermal_strength", "Relaxation Strength", text="0.5")
+
+    def execute(self):
+        bundle = self.get_input_data("terrain_bundle", expected_types=(PORT_TYPE_TERRAIN_BUNDLE,))
+        heightfield = np.asarray(bundle.heightfield.array, dtype=np.float32)
+        max_height = float(heightfield.max())
+        if max_height <= 0.0:
+            self.set_output_data(bundle)
+            return bundle
+
+        land_mask = None
+        if bundle.land_mask is not None:
+            land_mask = np.asarray(bundle.land_mask.array, dtype=bool)
+            if land_mask.shape != heightfield.shape:
+                raise ValueError(
+                    f"Terrain bundle land mask shape {land_mask.shape} does not match heightfield shape {heightfield.shape}."
+                )
+
+        erosion = ThermalErosion(
+            iterations=max(1, _parse_int(self.get_property("thermal_iterations"), 30)),
+            talus=_parse_float(self.get_property("thermal_talus"), 0.02),
+            strength=_parse_float(self.get_property("thermal_strength"), 0.5),
+        )
+
+        normalized_terrain = np.asarray(heightfield / max_height, dtype=np.float32)
+
+        def progress_callback(percent: int, message: str):
+            progress = min(max(percent / 100.0, 0.0), 1.0)
+            self.emit_progress(progress, message)
+
+        eroded, deposition_map, talus_activity = erosion.erode(
+            normalized_terrain,
+            land_mask=land_mask,
+            progress_callback=progress_callback,
+            cancel_check=self.is_cancelled,
+        )
+        self.check_cancelled()
+
+        eroded_height = np.asarray(eroded * max_height, dtype=np.float32)
+        updated_land_mask = bundle.land_mask or MaskData(array=eroded_height > 0.001, name="Land Mask")
+        updated_land_mask = MaskData(array=np.asarray(eroded_height > 0.001, dtype=bool), name=updated_land_mask.name)
+        updated = bundle.with_updates(
+            heightfield=bundle.heightfield.with_array(eroded_height, name=bundle.heightfield.name),
+            land_mask=updated_land_mask,
+            deposition_map=np.asarray(deposition_map * max_height, dtype=np.float32),
+        )
+        talus_overlay = overlay_from_scalar(
+            "talus_mask",
+            "Talus Mask",
+            np.asarray(talus_activity * max_height, dtype=np.float32),
+            updated.heightfield,
+            land_mask=np.asarray(updated_land_mask.array, dtype=bool),
+        )
+        talus_overlay.metadata.update(
+            {
+                "preview_bundle": updated,
+                "source_dtype": "float32",
+                "array_key": "talus_mask",
+            }
+        )
+        payload = {
+            "terrain_bundle": updated,
+            "talus_mask": talus_overlay,
+        }
+        self.emit_progress(1.0, "Thermal erosion complete")
+        self.set_output_data(payload)
+        return payload

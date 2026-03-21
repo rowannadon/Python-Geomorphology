@@ -91,6 +91,7 @@ from .nodes import (
     TPIHeuristicNode,
     TWIHeuristicNode,
     TemperatureHeuristicNode,
+    ThermalErosionNode,
     TerrainBaseNode,
     TerrainBundleData,
     TerraceMaxDeltaNode,
@@ -155,6 +156,7 @@ NODE_MENU_GROUPS: Tuple[Tuple[str, Tuple[Tuple[str, Type[TerrainBaseNode]], ...]
             ("Unbundle Terrain Bundle", UnbundleTerrainBundleNode),
             ("Build Erosion Maps", BuildErosionParameterMapsNode),
             ("Particle Erosion", ParticleErosionNode),
+            ("Thermal Erosion", ThermalErosionNode),
         ),
     ),
     (
