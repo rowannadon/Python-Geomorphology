@@ -1,5 +1,3 @@
-This directory contains two Python PyQT applications:
+This directory contains a single Python PyQT application:
 
-1. river-networks/ contains a 3d terrain generator based on simulation of erosion and river networks. It allows generation of 3d terrain as a heightmap, and export, and visualization.
-
-2. terrain-heuristics/ contains a GUI and CLI interface to generate terrain heuristics based on an input heightmap, in addition to climate and biome simulation.
+1. river-networks/ contains a 2.5d node based terrain generator based on simulation of erosion and river networks. It allows generation and visualization of 2.5d terrain as a heightmap. It also supports simulation of various terrain heuristics such as TPI, SVF, etc. and includes a climate and biome simulation based on estimates for temperature, precipitation, etc. 

@@ -23,6 +23,7 @@ PORT_TYPE_MASK = "mask"
 PORT_TYPE_TERRAIN_GRAPH = "terrain_graph"
 PORT_TYPE_RIVER_NETWORK = "river_network"
 PORT_TYPE_TERRAIN_BUNDLE = "terrain_bundle"
+PORT_TYPE_CLIMATE_BUNDLE = "climate_bundle"
 PORT_TYPE_MAP_OVERLAY = "map_overlay"
 PORT_TYPE_SETTINGS = "settings"
 
@@ -272,6 +273,58 @@ class TerrainBundleData(NodePayload):
 
 
 @dataclass(frozen=True)
+class ClimateBundleData(NodePayload):
+    """A typed container for precomputed climate and hydrology outputs."""
+
+    terrain_bundle: TerrainBundleData = field(default_factory=TerrainBundleData)
+    flowacc: np.ndarray = field(default_factory=lambda: np.zeros((1, 1), dtype=np.float32))
+    twi: np.ndarray = field(default_factory=lambda: np.zeros((1, 1), dtype=np.float32))
+    temp_c: np.ndarray = field(default_factory=lambda: np.zeros((1, 1), dtype=np.float32))
+    precip_mm: np.ndarray = field(default_factory=lambda: np.zeros((1, 1), dtype=np.float32))
+    pet: np.ndarray = field(default_factory=lambda: np.zeros((1, 1), dtype=np.float32))
+    aet: np.ndarray = field(default_factory=lambda: np.zeros((1, 1), dtype=np.float32))
+    aridity: np.ndarray = field(default_factory=lambda: np.zeros((1, 1), dtype=np.float32))
+    ocean: Optional[np.ndarray] = None
+    coastline: Optional[np.ndarray] = None
+    distance_to_coast_m: Optional[np.ndarray] = None
+    slope_deg: Optional[np.ndarray] = None
+    aspect_deg: Optional[np.ndarray] = None
+    grad_x: Optional[np.ndarray] = None
+    grad_y: Optional[np.ndarray] = None
+    wind_u: Optional[np.ndarray] = None
+    wind_v: Optional[np.ndarray] = None
+    dir_s: Optional[np.ndarray] = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "flowacc", _as_float32_2d(self.flowacc))
+        object.__setattr__(self, "twi", _as_float32_2d(self.twi))
+        object.__setattr__(self, "temp_c", _as_float32_2d(self.temp_c))
+        object.__setattr__(self, "precip_mm", _as_float32_2d(self.precip_mm))
+        object.__setattr__(self, "pet", _as_float32_2d(self.pet))
+        object.__setattr__(self, "aet", _as_float32_2d(self.aet))
+        object.__setattr__(self, "aridity", _as_float32_2d(self.aridity))
+        for attr_name, caster in (
+            ("ocean", _as_bool_2d),
+            ("coastline", _as_bool_2d),
+            ("distance_to_coast_m", _as_float32_2d),
+            ("slope_deg", _as_float32_2d),
+            ("aspect_deg", _as_float32_2d),
+            ("grad_x", _as_float32_2d),
+            ("grad_y", _as_float32_2d),
+            ("wind_u", _as_float32_2d),
+            ("wind_v", _as_float32_2d),
+            ("dir_s", _as_float32_2d),
+        ):
+            value = getattr(self, attr_name)
+            if value is not None:
+                object.__setattr__(self, attr_name, caster(value))
+
+    @property
+    def port_type(self) -> str:
+        return PORT_TYPE_CLIMATE_BUNDLE
+
+
+@dataclass(frozen=True)
 class MapOverlayData(NodePayload):
     """A typed overlay-map payload."""
 
@@ -330,6 +383,32 @@ def payload_identity_hash(payload: NodePayload) -> str:
             digest.update(payload.deposition_map.tobytes())
         if payload.rock_map is not None:
             digest.update(payload.rock_map.tobytes())
+    elif isinstance(payload, ClimateBundleData):
+        digest.update(payload_identity_hash(payload.terrain_bundle).encode("utf-8"))
+        for arr in (
+            payload.flowacc,
+            payload.twi,
+            payload.temp_c,
+            payload.precip_mm,
+            payload.pet,
+            payload.aet,
+            payload.aridity,
+        ):
+            digest.update(arr.tobytes())
+        for arr in (
+            payload.ocean,
+            payload.coastline,
+            payload.distance_to_coast_m,
+            payload.slope_deg,
+            payload.aspect_deg,
+            payload.grad_x,
+            payload.grad_y,
+            payload.wind_u,
+            payload.wind_v,
+            payload.dir_s,
+        ):
+            if arr is not None:
+                digest.update(np.asarray(arr).tobytes())
     elif isinstance(payload, TerrainGraphData):
         digest.update(payload.points.tobytes())
         if payload.point_height is not None:

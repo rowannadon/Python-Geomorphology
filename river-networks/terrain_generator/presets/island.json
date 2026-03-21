@@ -20,8 +20,8 @@
       "node_type": "terrain.WorldSettingsNode",
       "name": "World Settings",
       "pos": [
-        5247.0,
-        -63.0
+        4812.0,
+        173.0
       ],
       "properties": {
         "terrain_size_km": "16",
@@ -211,78 +211,6 @@
       }
     },
     {
-      "id": "03e837a411434cf2afabee98ad0ce9d8",
-      "node_type": "terrain.BiomeHeuristicNode",
-      "name": "Biome",
-      "pos": [
-        4793.0,
-        -275.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "e2256eedb0c440bdbf63ae2762cd50d1",
-      "node_type": "terrain.TemperatureHeuristicNode",
-      "name": "Temperature",
-      "pos": [
-        3632.0,
-        403.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
-      "node_type": "terrain.PrecipitationHeuristicNode",
-      "name": "Precipitation",
-      "pos": [
-        3630.0,
-        591.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "0a74bd053ba445a7a8fb884e2339550b",
-      "node_type": "terrain.PETHeuristicNode",
-      "name": "PET",
-      "pos": [
-        4162.0,
-        361.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "f6bf5dd15e404afab799cf02206bbd9b",
-      "node_type": "terrain.TWIHeuristicNode",
-      "name": "TWI",
-      "pos": [
-        4164.0,
-        165.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "0308242ed0c64a02977a51c542dcf27e",
-      "node_type": "terrain.FlowAccumulationHeuristicNode",
-      "name": "Flow Accumulation",
-      "pos": [
-        3633.0,
-        223.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
       "id": "be6f5d00368f4f34bc0d83ed651a5998",
       "node_type": "terrain.AssignRockLayersNode",
       "name": "Assign Rock Layers",
@@ -331,174 +259,51 @@
       }
     },
     {
-      "id": "8d47d6267ebe454ebcb8435727940d8a",
-      "node_type": "terrain.AlbedoHeuristicNode",
-      "name": "Albedo",
-      "pos": [
-        4794.0,
-        -11.0
-      ],
-      "properties": {
-        "cellsize_override": "90"
-      }
-    },
-    {
-      "id": "4796c4b9cc9f47749512d77c7e85267d",
-      "node_type": "terrain.SlopeHeuristicNode",
-      "name": "Slope",
-      "pos": [
-        3932.0,
-        -1117.0
-      ],
-      "properties": {
-        "cellsize_override": "100"
-      }
-    },
-    {
-      "id": "b8f07aab38384dd8a6533ab58ff32d08",
-      "node_type": "terrain.AspectHeuristicNode",
-      "name": "Aspect",
-      "pos": [
-        3933.0,
-        -952.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "8dfa4bda4b3c47c5806c2d66523432da",
-      "node_type": "terrain.NormalHeuristicNode",
-      "name": "Normals",
-      "pos": [
-        3933.0,
-        -788.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "eec7fd7ad3954a2bace05b7d525402b9",
-      "node_type": "terrain.CurvatureHeuristicNode",
-      "name": "Curvature",
-      "pos": [
-        3936.0,
-        -614.0
-      ],
-      "properties": {
-        "cellsize_override": ""
-      }
-    },
-    {
-      "id": "cee7df029b6d46d8865c44661dee021b",
-      "node_type": "terrain.TPIHeuristicNode",
-      "name": "TPI",
-      "pos": [
-        3937.0,
-        -443.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0",
-        "radius_m": "100"
-      }
-    },
-    {
-      "id": "e2333607c94e4a0c8a68a935f03963f5",
-      "node_type": "terrain.SVFHeuristicNode",
-      "name": "Sky View Factor",
-      "pos": [
-        3937.0,
-        -276.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0",
-        "svf_dirs": "16",
-        "svf_radius": "100.0"
-      }
-    },
-    {
-      "id": "7a124c23b41e4863b71626e9ed61d654",
-      "node_type": "terrain.AETHeuristicNode",
-      "name": "AET",
-      "pos": [
-        4797.0,
-        520.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "cc5de6e446794840907d4adb429e40c3",
-      "node_type": "terrain.AridityHeuristicNode",
-      "name": "Aridity",
-      "pos": [
-        4798.0,
-        739.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "cc56b3d0cbd143a9a13404096a4b5cb6",
-      "node_type": "terrain.ContinuousAlbedoHeuristicNode",
-      "name": "Continuous Albedo",
-      "pos": [
-        4794.0,
-        253.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "b2c0e182629546e3b02f7fa0e0a76486",
-      "node_type": "terrain.FoliageColorHeuristicNode",
-      "name": "Foliage Color",
-      "pos": [
-        4798.0,
-        956.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "a66f5087695849459574fca67775042a",
-      "node_type": "terrain.ForestDensityHeuristicNode",
-      "name": "Forest Density",
-      "pos": [
-        4798.0,
-        1220.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
-      "id": "1951f2f8af394fa6af2aaeea55e0125b",
-      "node_type": "terrain.GroundcoverDensityHeuristicNode",
-      "name": "Groundcover Density",
-      "pos": [
-        4798.0,
-        1486.0
-      ],
-      "properties": {
-        "cellsize_override": "0.0"
-      }
-    },
-    {
       "id": "f605a2791fea4302ba74044ceb9abeb1",
       "node_type": "terrain.ViewerNode",
       "name": "Viewer",
       "pos": [
-        5257.438771442386,
-        -644.4429617888242
+        4664.8093954692795,
+        -116.92654911818425
       ],
       "properties": {
-        "overlay_opacity": 0.3
+        "overlay_opacity": 0.58
+      }
+    },
+    {
+      "id": "48a8d1b0a334498d80bda00847cbd15d",
+      "node_type": "terrain.ClimateHeuristicBundleNode",
+      "name": "Climate Maps",
+      "pos": [
+        3650.5555221156637,
+        -74.63566680366463
+      ],
+      "properties": {
+        "cellsize_override": "0"
+      }
+    },
+    {
+      "id": "0f8d3159635144fbb2d7525da852cad0",
+      "node_type": "terrain.TopographicHeuristicBundleNode",
+      "name": "Topographic Maps",
+      "pos": [
+        3643.7579060553417,
+        435.4631946798595
+      ],
+      "properties": {
+        "cellsize_override": "0"
+      }
+    },
+    {
+      "id": "c032ba25a4454e04a1b156f933d75c2c",
+      "node_type": "terrain.BiomeHeuristicBundleNode",
+      "name": "Biome & Cover Maps",
+      "pos": [
+        4093.1467185934525,
+        166.76840266007025
+      ],
+      "properties": {
+        "cellsize_override": "0"
       }
     }
   ],
@@ -584,308 +389,20 @@
     {
       "source_node_id": "erosion",
       "source_port": "terrain_bundle",
-      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "0308242ed0c64a02977a51c542dcf27e",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "0a74bd053ba445a7a8fb884e2339550b",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "8d47d6267ebe454ebcb8435727940d8a",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "4796c4b9cc9f47749512d77c7e85267d",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "b8f07aab38384dd8a6533ab58ff32d08",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "8dfa4bda4b3c47c5806c2d66523432da",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "eec7fd7ad3954a2bace05b7d525402b9",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "cee7df029b6d46d8865c44661dee021b",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "e2333607c94e4a0c8a68a935f03963f5",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "7a124c23b41e4863b71626e9ed61d654",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "cc5de6e446794840907d4adb429e40c3",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "cc56b3d0cbd143a9a13404096a4b5cb6",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "b2c0e182629546e3b02f7fa0e0a76486",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "a66f5087695849459574fca67775042a",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "1951f2f8af394fa6af2aaeea55e0125b",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
       "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
       "target_port": "terrain_bundle"
     },
     {
-      "source_node_id": "03e837a411434cf2afabee98ad0ce9d8",
-      "source_port": "map_overlay",
-      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
-      "target_port": "map_overlay"
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "48a8d1b0a334498d80bda00847cbd15d",
+      "target_port": "terrain_bundle"
     },
     {
-      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
-      "source_port": "map_overlay",
-      "target_node_id": "0a74bd053ba445a7a8fb884e2339550b",
-      "target_port": "temperature"
-    },
-    {
-      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
-      "source_port": "map_overlay",
-      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
-      "target_port": "temperature"
-    },
-    {
-      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
-      "source_port": "map_overlay",
-      "target_node_id": "8d47d6267ebe454ebcb8435727940d8a",
-      "target_port": "temperature"
-    },
-    {
-      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
-      "source_port": "map_overlay",
-      "target_node_id": "cc56b3d0cbd143a9a13404096a4b5cb6",
-      "target_port": "temperature"
-    },
-    {
-      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
-      "source_port": "map_overlay",
-      "target_node_id": "b2c0e182629546e3b02f7fa0e0a76486",
-      "target_port": "temperature"
-    },
-    {
-      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
-      "source_port": "map_overlay",
-      "target_node_id": "a66f5087695849459574fca67775042a",
-      "target_port": "temperature"
-    },
-    {
-      "source_node_id": "e2256eedb0c440bdbf63ae2762cd50d1",
-      "source_port": "map_overlay",
-      "target_node_id": "1951f2f8af394fa6af2aaeea55e0125b",
-      "target_port": "temperature"
-    },
-    {
-      "source_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
-      "source_port": "map_overlay",
-      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
-      "target_port": "precipitation"
-    },
-    {
-      "source_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
-      "source_port": "map_overlay",
-      "target_node_id": "8d47d6267ebe454ebcb8435727940d8a",
-      "target_port": "precipitation"
-    },
-    {
-      "source_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
-      "source_port": "map_overlay",
-      "target_node_id": "7a124c23b41e4863b71626e9ed61d654",
-      "target_port": "precipitation"
-    },
-    {
-      "source_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
-      "source_port": "map_overlay",
-      "target_node_id": "cc5de6e446794840907d4adb429e40c3",
-      "target_port": "precipitation"
-    },
-    {
-      "source_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
-      "source_port": "map_overlay",
-      "target_node_id": "cc56b3d0cbd143a9a13404096a4b5cb6",
-      "target_port": "precipitation"
-    },
-    {
-      "source_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
-      "source_port": "map_overlay",
-      "target_node_id": "b2c0e182629546e3b02f7fa0e0a76486",
-      "target_port": "precipitation"
-    },
-    {
-      "source_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
-      "source_port": "map_overlay",
-      "target_node_id": "a66f5087695849459574fca67775042a",
-      "target_port": "precipitation"
-    },
-    {
-      "source_node_id": "c8e1aa2e128549c79e26d25fdc9f1f7a",
-      "source_port": "map_overlay",
-      "target_node_id": "1951f2f8af394fa6af2aaeea55e0125b",
-      "target_port": "precipitation"
-    },
-    {
-      "source_node_id": "0a74bd053ba445a7a8fb884e2339550b",
-      "source_port": "map_overlay",
-      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
-      "target_port": "pet"
-    },
-    {
-      "source_node_id": "0a74bd053ba445a7a8fb884e2339550b",
-      "source_port": "map_overlay",
-      "target_node_id": "8d47d6267ebe454ebcb8435727940d8a",
-      "target_port": "pet"
-    },
-    {
-      "source_node_id": "0a74bd053ba445a7a8fb884e2339550b",
-      "source_port": "map_overlay",
-      "target_node_id": "7a124c23b41e4863b71626e9ed61d654",
-      "target_port": "pet"
-    },
-    {
-      "source_node_id": "0a74bd053ba445a7a8fb884e2339550b",
-      "source_port": "map_overlay",
-      "target_node_id": "cc5de6e446794840907d4adb429e40c3",
-      "target_port": "pet"
-    },
-    {
-      "source_node_id": "0a74bd053ba445a7a8fb884e2339550b",
-      "source_port": "map_overlay",
-      "target_node_id": "cc56b3d0cbd143a9a13404096a4b5cb6",
-      "target_port": "pet"
-    },
-    {
-      "source_node_id": "0a74bd053ba445a7a8fb884e2339550b",
-      "source_port": "map_overlay",
-      "target_node_id": "b2c0e182629546e3b02f7fa0e0a76486",
-      "target_port": "pet"
-    },
-    {
-      "source_node_id": "0a74bd053ba445a7a8fb884e2339550b",
-      "source_port": "map_overlay",
-      "target_node_id": "a66f5087695849459574fca67775042a",
-      "target_port": "pet"
-    },
-    {
-      "source_node_id": "0a74bd053ba445a7a8fb884e2339550b",
-      "source_port": "map_overlay",
-      "target_node_id": "1951f2f8af394fa6af2aaeea55e0125b",
-      "target_port": "pet"
-    },
-    {
-      "source_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
-      "source_port": "map_overlay",
-      "target_node_id": "03e837a411434cf2afabee98ad0ce9d8",
-      "target_port": "twi"
-    },
-    {
-      "source_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
-      "source_port": "map_overlay",
-      "target_node_id": "8d47d6267ebe454ebcb8435727940d8a",
-      "target_port": "twi"
-    },
-    {
-      "source_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
-      "source_port": "map_overlay",
-      "target_node_id": "cc56b3d0cbd143a9a13404096a4b5cb6",
-      "target_port": "twi"
-    },
-    {
-      "source_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
-      "source_port": "map_overlay",
-      "target_node_id": "b2c0e182629546e3b02f7fa0e0a76486",
-      "target_port": "twi"
-    },
-    {
-      "source_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
-      "source_port": "map_overlay",
-      "target_node_id": "a66f5087695849459574fca67775042a",
-      "target_port": "twi"
-    },
-    {
-      "source_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
-      "source_port": "map_overlay",
-      "target_node_id": "1951f2f8af394fa6af2aaeea55e0125b",
-      "target_port": "twi"
-    },
-    {
-      "source_node_id": "0308242ed0c64a02977a51c542dcf27e",
-      "source_port": "map_overlay",
-      "target_node_id": "f6bf5dd15e404afab799cf02206bbd9b",
-      "target_port": "flowacc"
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "0f8d3159635144fbb2d7525da852cad0",
+      "target_port": "terrain_bundle"
     },
     {
       "source_node_id": "be6f5d00368f4f34bc0d83ed651a5998",
@@ -916,6 +433,18 @@
       "source_port": "terrain_graph",
       "target_node_id": "downcut",
       "target_port": "terrain_graph"
+    },
+    {
+      "source_node_id": "48a8d1b0a334498d80bda00847cbd15d",
+      "source_port": "climate_bundle",
+      "target_node_id": "c032ba25a4454e04a1b156f933d75c2c",
+      "target_port": "climate_bundle"
+    },
+    {
+      "source_node_id": "0f8d3159635144fbb2d7525da852cad0",
+      "source_port": "tpi",
+      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
+      "target_port": "map_overlay"
     }
   ],
   "pinned_node_id": "f605a2791fea4302ba74044ceb9abeb1",

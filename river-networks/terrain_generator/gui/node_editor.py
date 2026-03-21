@@ -44,9 +44,11 @@ from .nodes import (
     AridityHeuristicNode,
     AspectHeuristicNode,
     AssignRockLayersNode,
+    BiomeHeuristicBundleNode,
     BiomeHeuristicNode,
     BuildErosionParameterMapsNode,
     BundleTerrainOutputsNode,
+    ClimateHeuristicBundleNode,
     CombineNode,
     ConnectInlandSeasNode,
     ComputeRiverNetworkNode,
@@ -85,6 +87,7 @@ from .nodes import (
     SlopeHeuristicNode,
     SolveBaseGraphElevationNode,
     SVFHeuristicNode,
+    TopographicHeuristicBundleNode,
     TPIHeuristicNode,
     TWIHeuristicNode,
     TemperatureHeuristicNode,
@@ -155,27 +158,33 @@ NODE_MENU_GROUPS: Tuple[Tuple[str, Tuple[Tuple[str, Type[TerrainBaseNode]], ...]
     (
         "Heuristics",
         (
-            ("Slope", SlopeHeuristicNode),
-            ("Aspect", AspectHeuristicNode),
-            ("Normals", NormalHeuristicNode),
-            ("Curvature", CurvatureHeuristicNode),
-            ("TPI", TPIHeuristicNode),
-            ("Flow Accumulation", FlowAccumulationHeuristicNode),
-            ("TWI", TWIHeuristicNode),
-            ("SVF", SVFHeuristicNode),
-            ("Temperature", TemperatureHeuristicNode),
-            ("Precipitation", PrecipitationHeuristicNode),
-            ("PET", PETHeuristicNode),
-            ("AET", AETHeuristicNode),
-            ("Aridity", AridityHeuristicNode),
-            ("Biome", BiomeHeuristicNode),
-            ("Albedo", AlbedoHeuristicNode),
-            ("Continuous Albedo", ContinuousAlbedoHeuristicNode),
-            ("Foliage Color", FoliageColorHeuristicNode),
-            ("Forest Density", ForestDensityHeuristicNode),
-            ("Groundcover Density", GroundcoverDensityHeuristicNode),
+            ("Climate Maps", ClimateHeuristicBundleNode),
+            ("Topographic Maps", TopographicHeuristicBundleNode),
+            ("Biome & Cover Maps", BiomeHeuristicBundleNode),
         ),
     ),
+)
+
+LEGACY_REGISTER_ONLY_NODES: Tuple[Type[TerrainBaseNode], ...] = (
+    SlopeHeuristicNode,
+    AspectHeuristicNode,
+    NormalHeuristicNode,
+    CurvatureHeuristicNode,
+    TPIHeuristicNode,
+    FlowAccumulationHeuristicNode,
+    TWIHeuristicNode,
+    SVFHeuristicNode,
+    TemperatureHeuristicNode,
+    PrecipitationHeuristicNode,
+    PETHeuristicNode,
+    AETHeuristicNode,
+    AridityHeuristicNode,
+    BiomeHeuristicNode,
+    AlbedoHeuristicNode,
+    ContinuousAlbedoHeuristicNode,
+    FoliageColorHeuristicNode,
+    ForestDensityHeuristicNode,
+    GroundcoverDensityHeuristicNode,
 )
 
 
@@ -537,6 +546,14 @@ class NodeEditorWidget(QWidget):
 
     def register_nodes(self):
         registered: set[Type[TerrainBaseNode]] = set()
+        for node_cls in LEGACY_REGISTER_ONLY_NODES:
+            if node_cls in registered:
+                continue
+            registered.add(node_cls)
+            self.node_graph.register_node(node_cls)
+            node_type = f"{node_cls.__identifier__}.{node_cls.__name__}"
+            self.node_type_registry[node_type] = node_cls
+            self.create_type_lookup[node_cls.__name__] = node_type
         for _group_name, entries in NODE_MENU_GROUPS:
             for _entry_label, node_cls in entries:
                 if node_cls in registered:
