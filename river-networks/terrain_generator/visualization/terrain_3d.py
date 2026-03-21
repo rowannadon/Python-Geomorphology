@@ -6,7 +6,16 @@ from typing import Optional
 import numpy as np
 from OpenGL.GL import *
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import QOpenGLWidget
+from PyQt5.QtGui import QImage, QPainter, QPixmap
+from PyQt5.QtWidgets import (
+    QFrame,
+    QGraphicsPixmapItem,
+    QGraphicsScene,
+    QGraphicsView,
+    QOpenGLWidget,
+    QStackedLayout,
+    QWidget,
+)
 
 from ..core import TerrainData
 from skimage import morphology, measure
@@ -466,7 +475,49 @@ class Terrain3DRenderer:
         if self.texture_coords is not None:
             self.texcoord_dirty = True
 
-class TerrainViewport(QOpenGLWidget):
+def _coerce_rgba_u8(image: np.ndarray) -> np.ndarray:
+    """Normalize an image array into a uint8 RGBA buffer."""
+    arr = np.asarray(image)
+    if arr.ndim == 2:
+        if arr.dtype == np.bool_:
+            values = np.where(arr, 255, 0).astype(np.uint8)
+        else:
+            scalar = np.asarray(arr, dtype=np.float32)
+            finite = scalar[np.isfinite(scalar)]
+            if finite.size == 0:
+                values = np.zeros(scalar.shape, dtype=np.uint8)
+            else:
+                min_value = float(finite.min())
+                max_value = float(finite.max())
+                if max_value > min_value:
+                    normalized = (scalar - min_value) / (max_value - min_value)
+                else:
+                    normalized = np.zeros_like(scalar, dtype=np.float32)
+                values = np.clip(normalized * 255.0, 0.0, 255.0).astype(np.uint8)
+        rgba = np.empty((arr.shape[0], arr.shape[1], 4), dtype=np.uint8)
+        rgba[..., 0] = values
+        rgba[..., 1] = values
+        rgba[..., 2] = values
+        rgba[..., 3] = 255
+        return np.ascontiguousarray(rgba)
+
+    if arr.ndim != 3 or arr.shape[2] not in (3, 4):
+        raise ValueError("Expected a 2D grayscale image or a 3/4-channel image.")
+
+    if arr.dtype != np.uint8:
+        source = np.asarray(arr, dtype=np.float32)
+        if np.nanmax(source) <= 1.0:
+            source = source * 255.0
+        arr = np.clip(source, 0.0, 255.0).astype(np.uint8)
+
+    if arr.shape[2] == 4:
+        return np.ascontiguousarray(arr)
+
+    alpha = np.full(arr.shape[:2] + (1,), 255, dtype=np.uint8)
+    return np.ascontiguousarray(np.concatenate([arr, alpha], axis=2))
+
+
+class _Terrain3DViewport(QOpenGLWidget):
     """Qt widget for 3D terrain visualization."""
     
     terrainUpdated = pyqtSignal()
@@ -637,3 +688,147 @@ class TerrainViewport(QOpenGLWidget):
             self.renderer.release_gpu_resources()
             self.doneCurrent()
         super().closeEvent(event)
+
+
+class Image2DViewport(QGraphicsView):
+    """Simple pannable and zoomable 2D image viewport."""
+
+    imageUpdated = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._scene = QGraphicsScene(self)
+        self._pixmap_item = QGraphicsPixmapItem()
+        self._scene.addItem(self._pixmap_item)
+        self.setScene(self._scene)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setBackgroundBrush(Qt.black)
+        self.setAlignment(Qt.AlignCenter)
+        self.setDragMode(QGraphicsView.ScrollHandDrag)
+        self.setResizeAnchor(QGraphicsView.AnchorViewCenter)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setRenderHints(QPainter.SmoothPixmapTransform)
+        self._zoom_steps = 0
+        self._max_zoom_in_steps = 24
+        self._max_zoom_out_steps = -12
+        self._image_rgba: Optional[np.ndarray] = None
+
+    def has_image(self) -> bool:
+        return not self._pixmap_item.pixmap().isNull()
+
+    def set_image(self, image: np.ndarray):
+        rgba = _coerce_rgba_u8(image)
+        self._image_rgba = rgba
+        height, width = rgba.shape[:2]
+        qimage = QImage(rgba.data, width, height, rgba.strides[0], QImage.Format_RGBA8888).copy()
+        self._pixmap_item.setPixmap(QPixmap.fromImage(qimage))
+        self._scene.setSceneRect(self._pixmap_item.boundingRect())
+        self.reset_view()
+        self.imageUpdated.emit()
+
+    def clear_image(self):
+        self._image_rgba = None
+        self._pixmap_item.setPixmap(QPixmap())
+        self._scene.setSceneRect(self._pixmap_item.boundingRect())
+        self.resetTransform()
+        self._zoom_steps = 0
+        self.imageUpdated.emit()
+
+    def reset_view(self):
+        if not self.has_image():
+            self.resetTransform()
+            self._zoom_steps = 0
+            return
+        self.resetTransform()
+        self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
+        self.centerOn(self._pixmap_item)
+        self._zoom_steps = 0
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.has_image() and self._zoom_steps == 0:
+            self.reset_view()
+
+    def wheelEvent(self, event):
+        if not self.has_image():
+            super().wheelEvent(event)
+            return
+
+        delta = event.angleDelta().y()
+        if delta == 0:
+            event.accept()
+            return
+
+        zoom_in = delta > 0
+        next_steps = self._zoom_steps + (1 if zoom_in else -1)
+        if next_steps > self._max_zoom_in_steps or next_steps < self._max_zoom_out_steps:
+            event.accept()
+            return
+
+        factor = 1.15 if zoom_in else (1.0 / 1.15)
+        self.scale(factor, factor)
+        self._zoom_steps = next_steps
+        event.accept()
+
+
+class TerrainViewport(QWidget):
+    """Viewport that switches between 3D terrain and standalone 2D image display."""
+
+    terrainUpdated = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._terrain_view = _Terrain3DViewport(self)
+        self._image_view = Image2DViewport(self)
+        self._stack = QStackedLayout(self)
+        self._stack.setContentsMargins(0, 0, 0, 0)
+        self._stack.addWidget(self._terrain_view)
+        self._stack.addWidget(self._image_view)
+        self._stack.setCurrentWidget(self._terrain_view)
+        self._terrain_view.terrainUpdated.connect(self.terrainUpdated.emit)
+        self._image_view.imageUpdated.connect(self.terrainUpdated.emit)
+
+    def _show_terrain_view(self):
+        self._stack.setCurrentWidget(self._terrain_view)
+
+    def _show_image_view(self):
+        self._stack.setCurrentWidget(self._image_view)
+
+    def set_terrain(self, terrain_data: TerrainData):
+        self._show_terrain_view()
+        self._terrain_view.set_terrain(terrain_data)
+
+    def set_image(self, image: np.ndarray):
+        self._show_image_view()
+        self._image_view.set_image(image)
+
+    def clear_image(self):
+        self._image_view.clear_image()
+
+    def set_color_scheme(self, scheme: str):
+        self._terrain_view.set_color_scheme(scheme)
+
+    def set_height_scale(self, scale: float):
+        self._terrain_view.set_height_scale(scale)
+
+    def set_sun_altitude(self, altitude: float):
+        self._terrain_view.set_sun_altitude(altitude)
+
+    def set_show_rivers(self, show: bool):
+        self._terrain_view.set_show_rivers(show)
+
+    def set_river_threshold(self, threshold: float):
+        self._terrain_view.set_river_threshold(threshold)
+
+    def set_overlay_image(self, image: np.ndarray):
+        self._show_terrain_view()
+        self._terrain_view.set_overlay_image(image)
+
+    def clear_overlay_image(self):
+        self._terrain_view.clear_overlay_image()
+
+    def set_overlay_visible(self, visible: bool):
+        self._terrain_view.set_overlay_visible(visible)
+
+    def set_overlay_opacity(self, opacity: float):
+        self._terrain_view.set_overlay_opacity(opacity)

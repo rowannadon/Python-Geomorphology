@@ -77,6 +77,24 @@ def _rgba_from_deposition(array: np.ndarray, land_mask: Optional[np.ndarray] = N
     return out
 
 
+def _rgba_from_mask(array: np.ndarray, mask_kind: str = "boolean") -> np.ndarray:
+    mask = np.asarray(array)
+    if mask.ndim != 2:
+        raise ValueError("Expected a 2D mask.")
+
+    if mask_kind == "boolean":
+        binary = mask.astype(bool, copy=False)
+        values = np.where(binary, 255, 0).astype(np.uint8)
+        out = np.empty((mask.shape[0], mask.shape[1], 4), dtype=np.uint8)
+        out[..., 0] = values
+        out[..., 1] = values
+        out[..., 2] = values
+        out[..., 3] = 255
+        return out
+
+    return _rgba_from_scalar(np.asarray(mask, dtype=np.float32))
+
+
 @dataclass(frozen=True)
 class NodePayload:
     """Base class for payloads exchanged between nodes."""
@@ -487,6 +505,11 @@ def terrain_data_from_bundle(bundle: TerrainBundleData) -> TerrainData:
         points=None,
         neighbors=None,
     )
+
+
+def rgba_from_mask(mask: MaskData) -> np.ndarray:
+    """Create a display-ready RGBA preview from a mask payload."""
+    return _rgba_from_mask(mask.array, mask.mask_kind)
 
 
 def overlay_from_scalar(

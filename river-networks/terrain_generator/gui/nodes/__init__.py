@@ -23,6 +23,7 @@ from .contracts import (
     overlay_from_rgb,
     overlay_from_scalar,
     port_type_for_payload,
+    rgba_from_mask,
     terrain_data_from_bundle,
     terrain_data_from_heightfield,
 )
@@ -117,6 +118,7 @@ __all__ = [
     "PORT_TYPE_MAP_OVERLAY",
     "PORT_TYPE_SETTINGS",
     "port_type_for_payload",
+    "rgba_from_mask",
     "terrain_data_from_bundle",
     "terrain_data_from_heightfield",
     "overlay_from_scalar",

@@ -97,12 +97,14 @@ from .nodes import (
     ThresholdFloodNode,
     terrain_data_from_bundle,
     terrain_data_from_heightfield,
+    rgba_from_mask,
     UnbundleTerrainBundleNode,
     ViewerNode,
     WatershedMaskOverlayNode,
     WorldSettingsNode,
     port_type_for_payload,
     SettingsData,
+    MaskData,
 )
 
 NODE_MENU_GROUPS: Tuple[Tuple[str, Tuple[Tuple[str, Type[TerrainBaseNode]], ...]], ...] = (
@@ -942,16 +944,23 @@ class NodeEditorWidget(QWidget):
             self.status_bar.setText(f"{node_name}: nothing to visualize")
             return False
         if isinstance(payload, HeightfieldData):
+            self.node_viewport.clear_image()
             terrain = terrain_data_from_heightfield(payload)
             self.node_viewport.clear_overlay_image()
             self.node_viewport.set_overlay_visible(False)
             self.node_viewport.set_terrain(terrain)
         elif isinstance(payload, TerrainBundleData):
+            self.node_viewport.clear_image()
             terrain = terrain_data_from_bundle(payload)
             self.node_viewport.clear_overlay_image()
             self.node_viewport.set_overlay_visible(False)
             self.node_viewport.set_terrain(terrain)
         elif isinstance(payload, MapOverlayData):
+            if payload.metadata.get("viewer_mode") == "2d":
+                self.node_viewport.clear_overlay_image()
+                self.node_viewport.set_overlay_visible(False)
+                self.node_viewport.set_image(payload.rgba)
+                return True
             preview_bundle = payload.metadata.get("preview_bundle")
             if isinstance(preview_bundle, TerrainBundleData):
                 terrain = terrain_data_from_bundle(preview_bundle)
@@ -963,10 +972,15 @@ class NodeEditorWidget(QWidget):
             except (TypeError, ValueError):
                 overlay_opacity = ViewerNode.DEFAULT_OVERLAY_OPACITY
             overlay_opacity = max(0.0, min(1.0, overlay_opacity))
+            self.node_viewport.clear_image()
             self.node_viewport.set_terrain(terrain)
             self.node_viewport.set_overlay_opacity(overlay_opacity)
             self.node_viewport.set_overlay_image(payload.rgba)
             self.node_viewport.set_overlay_visible(True)
+        elif isinstance(payload, MaskData):
+            self.node_viewport.clear_overlay_image()
+            self.node_viewport.set_overlay_visible(False)
+            self.node_viewport.set_image(rgba_from_mask(payload))
         elif isinstance(payload, SettingsData):
             self.status_bar.setText(f"{node_name}: settings node executed")
             QMessageBox.information(

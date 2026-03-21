@@ -547,6 +547,7 @@ class ViewerNode(TerrainBaseNode):
         "terrain_bundle": (PORT_TYPE_TERRAIN_BUNDLE,),
         "heightfield": (PORT_TYPE_HEIGHTFIELD,),
         "map_overlay": (PORT_TYPE_MAP_OVERLAY,),
+        "land_mask": (PORT_TYPE_MASK,),
     }
 
     def __init__(self):
@@ -555,6 +556,7 @@ class ViewerNode(TerrainBaseNode):
         self.add_input("terrain_bundle", color=(140, 200, 210))
         self.add_input("heightfield", color=(150, 200, 150))
         self.add_input("map_overlay", color=(180, 180, 120))
+        self.add_input("land_mask", color=(120, 180, 120))
         overlay_opacity_widget = FloatSliderNodeWidget(
             self.view,
             "overlay_opacity",
@@ -581,12 +583,7 @@ class ViewerNode(TerrainBaseNode):
         heightfield = self.get_input_heightfield("heightfield", required=False)
         if isinstance(heightfield, HeightfieldData):
             return heightfield
-        if overlay is None:
-            return None
-        preview_bundle = overlay.metadata.get("preview_bundle")
-        if isinstance(preview_bundle, TerrainBundleData):
-            return preview_bundle
-        return overlay.base_heightfield
+        return None
 
     def _get_overlay_opacity(self) -> float:
         return max(0.0, min(1.0, _parse_float(self.get_property("overlay_opacity"), self.DEFAULT_OVERLAY_OPACITY)))
@@ -594,12 +591,40 @@ class ViewerNode(TerrainBaseNode):
     def execute(self):
         overlay = self.get_input_overlay(required=False)
         terrain_source = self._resolve_terrain_source(overlay)
-        if terrain_source is None and overlay is None:
-            raise ValueError("Viewer requires a terrain bundle, heightfield, or map overlay input.")
+        land_mask = self.get_input_mask("land_mask", required=False)
+        if terrain_source is None and overlay is None and land_mask is None:
+            raise ValueError("Viewer requires a terrain bundle, heightfield, map overlay, or land mask input.")
+
+        if overlay is None and land_mask is not None:
+            metadata = dict(land_mask.metadata)
+            metadata["viewer_mode"] = "2d"
+            payload = MaskData(
+                array=land_mask.array,
+                name=land_mask.name,
+                mask_kind=land_mask.mask_kind,
+                metadata=metadata,
+            )
+            self.set_output_data(payload)
+            return payload
 
         if overlay is None:
             self.set_output_data(terrain_source)
             return terrain_source
+
+        if terrain_source is None:
+            metadata = dict(overlay.metadata)
+            metadata["viewer_mode"] = "2d"
+            payload = MapOverlayData(
+                key=overlay.key,
+                display_name=overlay.display_name,
+                array=overlay.array,
+                rgba=overlay.rgba,
+                base_heightfield=overlay.base_heightfield,
+                overlay_kind=overlay.overlay_kind,
+                metadata=metadata,
+            )
+            self.set_output_data(payload)
+            return payload
 
         overlay_shape = overlay.rgba.shape[:2]
         terrain_shape = self._terrain_shape(terrain_source)
