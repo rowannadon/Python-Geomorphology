@@ -668,15 +668,12 @@ class ProjectSettingsNode(TerrainBaseNode):
         self.add_combo_menu("dimension", "Dimension", items=["512", "1024", "2048", "4096"])
         self.set_property("dimension", "1024")
         self.add_text_input("seed", "Seed", text="42")
-        self.add_combo_menu("preview_mode", "Preview Mode", items=["Off", "On"])
-        self.set_property("preview_mode", "Off")
         self.context.set_project_settings_node(self)
 
     def collect_settings(self) -> Dict[str, Any]:
         return {
             "dimension": _parse_int(self.get_property("dimension"), 1024),
             "seed": _parse_int(self.get_property("seed"), 42),
-            "preview_mode": (self.get_property("preview_mode") == "On"),
         }
 
     def mark_dirty(self):

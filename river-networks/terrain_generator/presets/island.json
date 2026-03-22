@@ -11,8 +11,7 @@
       ],
       "properties": {
         "dimension": "2048",
-        "seed": "42",
-        "preview_mode": "Off"
+        "seed": "42"
       }
     },
     {
