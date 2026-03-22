@@ -10,8 +10,9 @@
         -216.0
       ],
       "properties": {
-        "dimension": "512",
-        "seed": "42"
+        "dimension": "2048",
+        "seed": "42",
+        "preview_mode": "Off"
       }
     },
     {
@@ -19,11 +20,11 @@
       "node_type": "terrain.WorldSettingsNode",
       "name": "World Settings",
       "pos": [
-        4812.0,
-        173.0
+        2808.7572538688855,
+        -1279.995811571495
       ],
       "properties": {
-        "terrain_size_km": "16",
+        "terrain_size_km": "24",
         "cellsize": "15",
         "z_min": "0",
         "z_max": "6000",
@@ -63,7 +64,7 @@
         "lacunarity": "2.0",
         "lower": "2.0",
         "upper": "inf",
-        "seed": "42"
+        "seed": "45"
       }
     },
     {
@@ -192,19 +193,19 @@
       "node_type": "terrain.ParticleErosionNode",
       "name": "Particle Erosion",
       "pos": [
-        3176.0,
-        -16.0
+        3666.492384647923,
+        111.92488650545488
       ],
       "properties": {
-        "erosion_iterations": "12000",
+        "erosion_iterations": "240000",
         "erosion_inertia": "0.3",
         "erosion_capacity": "8.0",
         "erosion_deposition_rate": "0.2",
-        "erosion_rate": "0.4",
-        "erosion_evaporation": "0.98",
-        "erosion_gravity": "10.0",
+        "erosion_rate": "0.2",
+        "erosion_evaporation": "0.95",
+        "erosion_gravity": "5",
         "erosion_max_lifetime": "60",
-        "erosion_step_size": "0.0046875",
+        "erosion_step_size": "0.0026875",
         "erosion_blur_iterations": "1",
         "max_delta": "0.05"
       }
@@ -237,7 +238,7 @@
         "sea_level": "0.0",
         "min_lake_size": "30",
         "carve_depth": "0.1",
-        "channel_width": "0.25",
+        "channel_width": "0.5",
         "channel_falloff": "4",
         "slope_falloff": "2.5",
         "fill_height": "0.01"
@@ -275,8 +276,8 @@
       "node_type": "terrain.ClimateHeuristicBundleNode",
       "name": "Climate Maps",
       "pos": [
-        4041.5776540992033,
-        -250.59992199328528
+        4041.0,
+        -250.0
       ],
       "properties": {
         "cellsize_override": "0"
@@ -287,8 +288,8 @@
       "node_type": "terrain.TopographicHeuristicBundleNode",
       "name": "Topographic Maps",
       "pos": [
-        4348.4084817187395,
-        348.81050989332323
+        4348.0,
+        348.0
       ],
       "properties": {
         "cellsize_override": "0",
@@ -302,8 +303,8 @@
       "node_type": "terrain.BiomeHeuristicBundleNode",
       "name": "Biome & Cover Maps",
       "pos": [
-        4536.251223352466,
-        -486.14690448638066
+        4536.0,
+        -486.0
       ],
       "properties": {
         "cellsize_override": "0"
@@ -314,8 +315,8 @@
       "node_type": "terrain.ViewerNode",
       "name": "Viewer 1",
       "pos": [
-        473.86174557138236,
-        324.00000000000006
+        473.0,
+        324.0
       ],
       "properties": {
         "overlay_opacity": 0.7
@@ -326,13 +327,13 @@
       "node_type": "terrain.ThermalErosionNode",
       "name": "Thermal Erosion",
       "pos": [
-        3925.0,
-        122.0
+        3186.0367697494257,
+        190.29773379170803
       ],
       "properties": {
         "thermal_iterations": "30",
         "thermal_talus": "0.02",
-        "thermal_strength": "0.5"
+        "thermal_strength": "0.2"
       }
     },
     {
@@ -340,11 +341,11 @@
       "node_type": "terrain.ViewerNode",
       "name": "Viewer 2",
       "pos": [
-        3188.2078655611867,
-        -328.9295000900171
+        3628.5732563003503,
+        -100.35160792706853
       ],
       "properties": {
-        "overlay_opacity": 0.7
+        "overlay_opacity": 0.0
       }
     }
   ],
@@ -424,19 +425,25 @@
     {
       "source_node_id": "bundle",
       "source_port": "terrain_bundle",
-      "target_node_id": "erosion",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "bundle",
-      "source_port": "terrain_bundle",
-      "target_node_id": "78dcdf8350bc4853a1e573fc6891dfea",
+      "target_node_id": "64989528e5b24f6889fa2f09dc3837eb",
       "target_port": "terrain_bundle"
     },
     {
       "source_node_id": "erosion",
       "source_port": "terrain_bundle",
-      "target_node_id": "64989528e5b24f6889fa2f09dc3837eb",
+      "target_node_id": "48a8d1b0a334498d80bda00847cbd15d",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "erosion",
+      "source_port": "terrain_bundle",
+      "target_node_id": "0f8d3159635144fbb2d7525da852cad0",
       "target_port": "terrain_bundle"
     },
     {
@@ -477,12 +484,6 @@
     },
     {
       "source_node_id": "48a8d1b0a334498d80bda00847cbd15d",
-      "source_port": "twi",
-      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
-      "target_port": "map_overlay"
-    },
-    {
-      "source_node_id": "48a8d1b0a334498d80bda00847cbd15d",
       "source_port": "climate_bundle",
       "target_node_id": "c032ba25a4454e04a1b156f933d75c2c",
       "target_port": "climate_bundle"
@@ -490,22 +491,16 @@
     {
       "source_node_id": "64989528e5b24f6889fa2f09dc3837eb",
       "source_port": "terrain_bundle",
-      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
+      "target_node_id": "erosion",
       "target_port": "terrain_bundle"
     },
     {
       "source_node_id": "64989528e5b24f6889fa2f09dc3837eb",
       "source_port": "terrain_bundle",
-      "target_node_id": "48a8d1b0a334498d80bda00847cbd15d",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "64989528e5b24f6889fa2f09dc3837eb",
-      "source_port": "terrain_bundle",
-      "target_node_id": "0f8d3159635144fbb2d7525da852cad0",
+      "target_node_id": "78dcdf8350bc4853a1e573fc6891dfea",
       "target_port": "terrain_bundle"
     }
   ],
-  "pinned_node_id": "f605a2791fea4302ba74044ceb9abeb1",
+  "pinned_node_id": "78dcdf8350bc4853a1e573fc6891dfea",
   "metadata": {}
 }
