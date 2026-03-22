@@ -1,5 +1,7 @@
 This is a repository for a piece of software written in python, designed to generate terrain heightmaps using realistic simulation of river networks and particle based hydraulic erosion, as well as generating terrain heuristic data, such as slope, normal, curvature, etc. and simulating climate and biome parameters.
 
+This project is in active development and therefore does not need to support any legacy users. Do not add any specific migrations or worry about breaking currently saved graphs, etc.
+
 Test the application with python3 py_compile to test for syntax errors. If you need to run any checks beyond this, which require importing packages, make sure to activate the venv in ./venv/ in order to get access to all the dependencies.
 
 The source code for the application is in ./terrain_generator. It is organized into config, core, gui, heuristic and io files, located in their respective
