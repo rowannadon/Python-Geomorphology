@@ -6,13 +6,12 @@
       "node_type": "terrain.ProjectSettingsNode",
       "name": "Project Settings",
       "pos": [
-        -1719.0,
-        -216.0
+        -2220.511949062527,
+        -240.11115139723694
       ],
       "properties": {
         "dimension": "2048",
-        "seed": "42",
-        "preview_mode": "Off"
+        "seed": "42"
       }
     },
     {
@@ -20,8 +19,8 @@
       "node_type": "terrain.WorldSettingsNode",
       "name": "World Settings",
       "pos": [
-        2808.7572538688855,
-        -1279.995811571495
+        2808.0,
+        -1279.0
       ],
       "properties": {
         "terrain_size_km": "24",
@@ -54,8 +53,8 @@
       "node_type": "terrain.FBMNode",
       "name": "Base Noise",
       "pos": [
-        -1375.0,
-        -245.0
+        -1876.511949062527,
+        -269.11115139723694
       ],
       "properties": {
         "scale": "-6.4",
@@ -72,8 +71,8 @@
       "node_type": "terrain.ShapeNode",
       "name": "Continent Mask",
       "pos": [
-        -1521.0,
-        132.0
+        -2022.511949062527,
+        107.88884860276313
       ],
       "properties": {
         "shape_type": "Polygon",
@@ -90,8 +89,8 @@
       "node_type": "terrain.CombineNode",
       "name": "Mask Terrain",
       "pos": [
-        -1056.0,
-        4.0
+        -1557.511949062527,
+        -20.11115139723688
       ],
       "properties": {
         "operation": "Multiply",
@@ -105,8 +104,8 @@
       "node_type": "terrain.NormalizeClampNode",
       "name": "Normalize Seed",
       "pos": [
-        -678.0,
-        4.0
+        -1179.511949062527,
+        -20.11115139723688
       ],
       "properties": {
         "mode": "Normalize",
@@ -119,8 +118,8 @@
       "node_type": "terrain.ThresholdFloodNode",
       "name": "Flood Coastline",
       "pos": [
-        -327.0,
-        4.0
+        -828.511949062527,
+        -20.11115139723688
       ],
       "properties": {
         "sea_level": "0.33"
@@ -187,28 +186,6 @@
         48.0
       ],
       "properties": {}
-    },
-    {
-      "id": "erosion",
-      "node_type": "terrain.ParticleErosionNode",
-      "name": "Particle Erosion",
-      "pos": [
-        3666.492384647923,
-        111.92488650545488
-      ],
-      "properties": {
-        "erosion_iterations": "240000",
-        "erosion_inertia": "0.3",
-        "erosion_capacity": "8.0",
-        "erosion_deposition_rate": "0.2",
-        "erosion_rate": "0.2",
-        "erosion_evaporation": "0.95",
-        "erosion_gravity": "5",
-        "erosion_max_lifetime": "60",
-        "erosion_step_size": "0.0026875",
-        "erosion_blur_iterations": "1",
-        "max_delta": "0.05"
-      }
     },
     {
       "id": "be6f5d00368f4f34bc0d83ed651a5998",
@@ -316,7 +293,7 @@
       "name": "Viewer 1",
       "pos": [
         473.0,
-        324.0
+        321.86248644465195
       ],
       "properties": {
         "overlay_opacity": 0.7
@@ -327,8 +304,8 @@
       "node_type": "terrain.ThermalErosionNode",
       "name": "Thermal Erosion",
       "pos": [
-        3186.0367697494257,
-        190.29773379170803
+        3186.0,
+        190.0
       ],
       "properties": {
         "thermal_iterations": "30",
@@ -341,8 +318,8 @@
       "node_type": "terrain.ViewerNode",
       "name": "Viewer 2",
       "pos": [
-        3628.5732563003503,
-        -100.35160792706853
+        3829.1903856163426,
+        119.27491466050876
       ],
       "properties": {
         "overlay_opacity": 0.0
@@ -429,24 +406,6 @@
       "target_port": "terrain_bundle"
     },
     {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "48a8d1b0a334498d80bda00847cbd15d",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "0f8d3159635144fbb2d7525da852cad0",
-      "target_port": "terrain_bundle"
-    },
-    {
       "source_node_id": "be6f5d00368f4f34bc0d83ed651a5998",
       "source_port": "terrain_graph",
       "target_node_id": "f79c8337c75747e5940d8c8dbebef820",
@@ -491,16 +450,10 @@
     {
       "source_node_id": "64989528e5b24f6889fa2f09dc3837eb",
       "source_port": "terrain_bundle",
-      "target_node_id": "erosion",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "64989528e5b24f6889fa2f09dc3837eb",
-      "source_port": "terrain_bundle",
       "target_node_id": "78dcdf8350bc4853a1e573fc6891dfea",
       "target_port": "terrain_bundle"
     }
   ],
-  "pinned_node_id": "78dcdf8350bc4853a1e573fc6891dfea",
+  "pinned_node_id": "82bc355393fd47cbb83ea42024f215a2",
   "metadata": {}
 }

@@ -447,13 +447,20 @@ def port_type_for_payload(payload: Any) -> str:
     return "unknown"
 
 
-def terrain_data_from_heightfield(heightfield: HeightfieldData) -> TerrainData:
+def _scaled_preview_heightmap(heightmap: np.ndarray, height_multiplier: float) -> np.ndarray:
+    multiplier = float(height_multiplier)
+    if not np.isfinite(multiplier) or multiplier <= 0.0 or np.isclose(multiplier, 1.0):
+        return np.asarray(heightmap, dtype=np.float32)
+    return np.ascontiguousarray(np.asarray(heightmap, dtype=np.float32) * np.float32(multiplier))
+
+
+def terrain_data_from_heightfield(heightfield: HeightfieldData, *, height_multiplier: float = 1.0) -> TerrainData:
     """Create a minimal TerrainData preview from a heightfield payload."""
     arr = heightfield.array
     dim_y, dim_x = arr.shape
     land_mask = arr > 0.0
     terrain = TerrainData(
-        heightmap=arr,
+        heightmap=_scaled_preview_heightmap(arr, height_multiplier),
         land_mask=land_mask,
         river_volume=np.zeros((dim_y, dim_x), dtype=np.float32),
         watershed_mask=np.zeros((dim_y, dim_x), dtype=np.int32),
@@ -468,7 +475,7 @@ def terrain_data_from_heightfield(heightfield: HeightfieldData) -> TerrainData:
     return terrain
 
 
-def terrain_data_from_bundle(bundle: TerrainBundleData) -> TerrainData:
+def terrain_data_from_bundle(bundle: TerrainBundleData, *, height_multiplier: float = 1.0) -> TerrainData:
     """Create a TerrainData preview from a raster terrain bundle."""
     heightfield = bundle.heightfield.array
     land_mask = (
@@ -477,7 +484,7 @@ def terrain_data_from_bundle(bundle: TerrainBundleData) -> TerrainData:
         else np.ones(heightfield.shape, dtype=bool)
     )
     return TerrainData(
-        heightmap=heightfield,
+        heightmap=_scaled_preview_heightmap(heightfield, height_multiplier),
         land_mask=np.asarray(land_mask, dtype=bool),
         river_volume=(
             np.asarray(bundle.river_volume, dtype=np.float32)

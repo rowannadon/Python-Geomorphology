@@ -543,6 +543,7 @@ class ViewerNode(TerrainBaseNode):
 
     NODE_NAME = "Viewer"
     DEFAULT_OVERLAY_OPACITY = 0.7
+    DEFAULT_HEIGHT_MULTIPLIER = 1.0
     INPUT_TYPES = {
         "terrain_bundle": (PORT_TYPE_TERRAIN_BUNDLE,),
         "heightfield": (PORT_TYPE_HEIGHTFIELD,),
@@ -557,6 +558,16 @@ class ViewerNode(TerrainBaseNode):
         self.add_input("heightfield", color=(150, 200, 150))
         self.add_input("map_overlay", color=(180, 180, 120))
         self.add_input("land_mask", color=(120, 180, 120))
+        height_multiplier_widget = FloatSliderNodeWidget(
+            self.view,
+            "height_multiplier",
+            "Height Multiplier",
+            value=self.DEFAULT_HEIGHT_MULTIPLIER,
+            min_value=1.0,
+            max_value=10.0,
+            step=0.1,
+        )
+        self.add_custom_widget(height_multiplier_widget)
         overlay_opacity_widget = FloatSliderNodeWidget(
             self.view,
             "overlay_opacity",
@@ -587,6 +598,9 @@ class ViewerNode(TerrainBaseNode):
 
     def _get_overlay_opacity(self) -> float:
         return max(0.0, min(1.0, _parse_float(self.get_property("overlay_opacity"), self.DEFAULT_OVERLAY_OPACITY)))
+
+    def get_height_multiplier(self) -> float:
+        return max(1.0, min(10.0, _parse_float(self.get_property("height_multiplier"), self.DEFAULT_HEIGHT_MULTIPLIER)))
 
     def execute(self):
         overlay = self.get_input_overlay(required=False)

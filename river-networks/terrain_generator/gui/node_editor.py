@@ -740,7 +740,7 @@ class NodeEditorWidget(QWidget):
             return
         self._pin_node(node)
         try:
-            visualized = self._visualize_payload(payload, node._base_name)
+            visualized = self._visualize_payload(payload, node)
         except Exception as exc:
             self._update_node_visual_state(node, "error")
             self.status_bar.setText(f"{node._base_name}: visualization failed")
@@ -938,7 +938,8 @@ class NodeEditorWidget(QWidget):
                     queue.append(downstream_node)
         return False
 
-    def _visualize_payload(self, payload, node_name):
+    def _visualize_payload(self, payload, node):
+        node_name = getattr(node, "_base_name", str(node))
         if payload is None:
             QMessageBox.warning(
                 self,
@@ -947,15 +948,20 @@ class NodeEditorWidget(QWidget):
             )
             self.status_bar.setText(f"{node_name}: nothing to visualize")
             return False
+        height_multiplier = (
+            node.get_height_multiplier()
+            if isinstance(node, ViewerNode)
+            else ViewerNode.DEFAULT_HEIGHT_MULTIPLIER
+        )
         if isinstance(payload, HeightfieldData):
             self.node_viewport.clear_image()
-            terrain = terrain_data_from_heightfield(payload)
+            terrain = terrain_data_from_heightfield(payload, height_multiplier=height_multiplier)
             self.node_viewport.clear_overlay_image()
             self.node_viewport.set_overlay_visible(False)
             self.node_viewport.set_terrain(terrain)
         elif isinstance(payload, TerrainBundleData):
             self.node_viewport.clear_image()
-            terrain = terrain_data_from_bundle(payload)
+            terrain = terrain_data_from_bundle(payload, height_multiplier=height_multiplier)
             self.node_viewport.clear_overlay_image()
             self.node_viewport.set_overlay_visible(False)
             self.node_viewport.set_terrain(terrain)
@@ -967,9 +973,9 @@ class NodeEditorWidget(QWidget):
                 return True
             preview_bundle = payload.metadata.get("preview_bundle")
             if isinstance(preview_bundle, TerrainBundleData):
-                terrain = terrain_data_from_bundle(preview_bundle)
+                terrain = terrain_data_from_bundle(preview_bundle, height_multiplier=height_multiplier)
             else:
-                terrain = terrain_data_from_heightfield(payload.base_heightfield)
+                terrain = terrain_data_from_heightfield(payload.base_heightfield, height_multiplier=height_multiplier)
             overlay_opacity = payload.metadata.get("overlay_opacity", ViewerNode.DEFAULT_OVERLAY_OPACITY)
             try:
                 overlay_opacity = float(overlay_opacity)
