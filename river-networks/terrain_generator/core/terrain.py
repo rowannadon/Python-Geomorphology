@@ -286,11 +286,13 @@ class TerrainGenerator:
             self._load_imported_heightmap()
             
     def _points_to_indices(self, points: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
-        """Convert float sample coordinates to safe integer grid indices."""
+        """Convert (x, y) sample coordinates to safe (row, col) grid indices."""
         h, w = shape
-        coords = np.floor(points).astype(np.int64)
-        np.clip(coords[:, 0], 0, h - 1, out=coords[:, 0])  # row / y
-        np.clip(coords[:, 1], 0, w - 1, out=coords[:, 1])  # col / x
+        coords = np.empty((points.shape[0], 2), dtype=np.int64)
+        coords[:, 0] = np.floor(points[:, 1]).astype(np.int64)  # row / y
+        coords[:, 1] = np.floor(points[:, 0]).astype(np.int64)  # col / x
+        np.clip(coords[:, 0], 0, h - 1, out=coords[:, 0])
+        np.clip(coords[:, 1], 0, w - 1, out=coords[:, 1])
         return coords
 
     @property
