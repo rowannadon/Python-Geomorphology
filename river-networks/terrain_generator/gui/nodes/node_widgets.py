@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 from typing import Optional, Sequence
 
+import numpy as np
 from NodeGraphQt.widgets.node_widgets import NodeBaseWidget
 from PyQt5 import QtCore, QtGui
 from PyQt5.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSlider, QVBoxLayout, QWidget
@@ -427,6 +428,111 @@ class FloatSliderNodeWidget(NodeBaseWidget):
         finally:
             self._updating = False
         self.on_value_changed()
+
+
+class FbmPreviewNodeWidget(NodeBaseWidget):
+    """Read-only node widget that renders a compact grayscale FBM preview."""
+
+    def __init__(
+        self,
+        parent=None,
+        name: str = "",
+        label: str = "",
+        *,
+        preview_size: int = 144,
+    ):
+        super().__init__(parent, name, label)
+        self._preview_size = max(64, int(preview_size))
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self._image_label = QLabel("Preview unavailable")
+        self._image_label.setAlignment(QtCore.Qt.AlignCenter)
+        self._image_label.setFixedSize(self._preview_size, self._preview_size)
+        self._image_label.setStyleSheet(
+            """
+            QLabel {
+                background-color: #202126;
+                border: 1px solid #42444f;
+                border-radius: 4px;
+                color: #8e93a6;
+            }
+            """
+        )
+        layout.addWidget(self._image_label, alignment=QtCore.Qt.AlignHCenter)
+
+        self._status_label = QLabel("")
+        self._status_label.setAlignment(QtCore.Qt.AlignCenter)
+        self._status_label.setWordWrap(True)
+        self._status_label.setStyleSheet("color: #8e93a6; font-size: 10px;")
+        layout.addWidget(self._status_label)
+
+        self.set_custom_widget(container)
+        self.widget().setMaximumWidth(self._preview_size + 18)
+        self.set_status("Updates from current FBM settings.")
+
+    def _show_unavailable(self, status: str):
+        self._image_label.clear()
+        self._image_label.setText("Preview unavailable")
+        self.set_status(status or "Unable to build preview.")
+
+    @staticmethod
+    def _normalize_preview(data: np.ndarray) -> np.ndarray:
+        arr = np.asarray(data, dtype=np.float32)
+        finite_mask = np.isfinite(arr)
+        if not finite_mask.any():
+            return np.zeros(arr.shape, dtype=np.uint8)
+
+        finite_values = arr[finite_mask]
+        min_value = float(finite_values.min())
+        max_value = float(finite_values.max())
+        normalized = np.zeros(arr.shape, dtype=np.float32)
+        if max_value > min_value:
+            normalized[finite_mask] = (arr[finite_mask] - min_value) / (max_value - min_value)
+        return np.ascontiguousarray(np.round(normalized * 255.0).astype(np.uint8))
+
+    def set_status(self, text: str):
+        self._status_label.setText(str(text or ""))
+
+    def set_preview_array(self, data: Optional[np.ndarray], *, status: str = ""):
+        if data is None:
+            self._show_unavailable(status)
+            return
+
+        image_data = self._normalize_preview(data)
+        if image_data.ndim != 2 or min(image_data.shape) <= 0:
+            self._show_unavailable(status)
+            return
+
+        height, width = image_data.shape
+        qimage = QtGui.QImage(
+            image_data.data,
+            width,
+            height,
+            image_data.strides[0],
+            QtGui.QImage.Format_Grayscale8,
+        ).copy()
+        if qimage.isNull():
+            self._show_unavailable(status)
+            return
+
+        pixmap = QtGui.QPixmap.fromImage(qimage).scaled(
+            self._image_label.size(),
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation,
+        )
+        self._image_label.setPixmap(pixmap)
+        self._image_label.setText("")
+        self.set_status(status)
+
+    def get_value(self):
+        return self._status_label.text()
+
+    def set_value(self, value=""):
+        self.set_status(str(value or ""))
 
 
 class CurveEditorNodeWidget(NodeBaseWidget):

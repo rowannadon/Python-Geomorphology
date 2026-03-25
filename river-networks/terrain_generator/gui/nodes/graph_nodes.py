@@ -15,7 +15,7 @@ from ...core.particle_erosion import ParticleErosion
 from ...core.thermal_erosion import ThermalErosion
 from ...core.utils import gaussian_gradient, render_triangulation
 from ..curves_widget import apply_curve_points, parse_curve_points
-from .base_nodes import TerrainBaseNode, _distance_km_to_cells, _parse_float, _parse_int, _parse_points_text
+from .base_nodes import FBMPreviewMixin, TerrainBaseNode, _distance_km_to_cells, _parse_float, _parse_int, _parse_points_text
 from .contracts import (
     HeightfieldData,
     MaskData,
@@ -299,10 +299,12 @@ class MaxDeltaCurveGraphNode(TerrainBaseNode):
         return updated
 
 
-class MaxDeltaFBMGraphNode(TerrainBaseNode):
+class MaxDeltaFBMGraphNode(FBMPreviewMixin, TerrainBaseNode):
     """Scale graph max-delta constraints with configurable FBM noise."""
 
     NODE_NAME = "Graph Max Delta FBM"
+    FBM_PREVIEW_SEED_OFFSET = 3000
+    FBM_PREVIEW_MIN_OCTAVES = 1
     INPUT_TYPES = {"terrain_graph": (PORT_TYPE_TERRAIN_GRAPH,)}
     OUTPUT_TYPES = {"terrain_graph": (PORT_TYPE_TERRAIN_GRAPH,)}
 
@@ -320,6 +322,7 @@ class MaxDeltaFBMGraphNode(TerrainBaseNode):
         self.add_text_input("lower", "Lower Bound", text="2.0")
         self.add_text_input("upper", "Upper Bound", text="inf")
         self.add_text_input("seed", "Seed", text="42")
+        self._setup_fbm_preview()
 
     def execute(self):
         graph = self.get_input_data("terrain_graph", expected_types=(PORT_TYPE_TERRAIN_GRAPH,))

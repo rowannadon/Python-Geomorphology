@@ -34,6 +34,7 @@ from .context import ExecutionCancellationToken, NodeExecutionCancelled, get_glo
 from .node_widgets import (
     CurveEditorNodeWidget,
     FilePathNodeWidget,
+    FbmPreviewNodeWidget,
     FloatSliderNodeWidget,
     PolygonEditorNodeWidget,
     parse_polygon_points,
@@ -538,6 +539,85 @@ class TerrainBaseNode(BaseNode):
         self.add_custom_widget(widget, widget_type=NodePropWidgetEnum.FILE_OPEN.value, tab=tab)
 
 
+class FBMPreviewMixin:
+    """Shared inline preview support for nodes driven by FBM parameters."""
+
+    FBM_PREVIEW_PROPERTY_NAMES = frozenset({"scale", "octaves", "persistence", "lacunarity", "lower", "upper", "seed"})
+    FBM_PREVIEW_DEFAULTS: Dict[str, float | int] = {
+        "scale": -6.0,
+        "octaves": 6,
+        "persistence": 0.5,
+        "lacunarity": 2.0,
+        "lower": 2.0,
+        "upper": float("inf"),
+        "seed": 42,
+    }
+    FBM_PREVIEW_LABEL = "Noise Preview"
+    FBM_PREVIEW_RENDER_RESOLUTION = 96
+    FBM_PREVIEW_WIDGET_SIZE = 144
+    FBM_PREVIEW_SEED_OFFSET = 0
+    FBM_PREVIEW_MIN_OCTAVES = 0
+
+    def set_property(self, name: str, value: Any, **kwargs):  # type: ignore[override]
+        result = super().set_property(name, value, **kwargs)
+        if name in self.FBM_PREVIEW_PROPERTY_NAMES:
+            self._refresh_fbm_preview()
+        return result
+
+    def _setup_fbm_preview(self):
+        self._fbm_preview_widget = FbmPreviewNodeWidget(
+            self.view,
+            "_fbm_preview",
+            self.FBM_PREVIEW_LABEL,
+            preview_size=self.FBM_PREVIEW_WIDGET_SIZE,
+        )
+        self.add_custom_widget(self._fbm_preview_widget)
+        self._refresh_fbm_preview()
+
+    def _fbm_preview_parameters(self) -> Dict[str, float | int]:
+        defaults = self.FBM_PREVIEW_DEFAULTS
+        octaves = _parse_int(self.get_property("octaves"), int(defaults["octaves"]))
+        if self.FBM_PREVIEW_MIN_OCTAVES > 0:
+            octaves = max(self.FBM_PREVIEW_MIN_OCTAVES, octaves)
+        return {
+            "scale": _parse_float(self.get_property("scale"), float(defaults["scale"])),
+            "octaves": octaves,
+            "persistence": _parse_float(self.get_property("persistence"), float(defaults["persistence"])),
+            "lacunarity": _parse_float(self.get_property("lacunarity"), float(defaults["lacunarity"])),
+            "lower": _parse_float(self.get_property("lower"), float(defaults["lower"])),
+            "upper": _parse_float(self.get_property("upper"), float(defaults["upper"])),
+            "seed": _parse_int(self.get_property("seed"), self.context.get_seed()),
+        }
+
+    def _fbm_preview_status_text(self, parameters: Dict[str, float | int]) -> str:
+        scale = float(parameters["scale"])
+        return f"Scale {scale:.3g}, {int(parameters['octaves'])} oct, seed {int(parameters['seed'])}"
+
+    def _refresh_fbm_preview(self):
+        widget = getattr(self, "_fbm_preview_widget", None)
+        if widget is None:
+            return
+
+        try:
+            parameters = self._fbm_preview_parameters()
+            generator = ConsistentFBMNoise(
+                scale=float(parameters["scale"]),
+                octaves=int(parameters["octaves"]),
+                persistence=float(parameters["persistence"]),
+                lacunarity=float(parameters["lacunarity"]),
+                lower=float(parameters["lower"]),
+                upper=float(parameters["upper"]),
+                seed_offset=self.FBM_PREVIEW_SEED_OFFSET,
+                base_seed=int(parameters["seed"]),
+            )
+            preview = generator.generate((self.FBM_PREVIEW_RENDER_RESOLUTION, self.FBM_PREVIEW_RENDER_RESOLUTION))
+        except Exception as exc:
+            widget.set_preview_array(None, status=f"Preview unavailable: {exc}")
+            return
+
+        widget.set_preview_array(preview, status=self._fbm_preview_status_text(parameters))
+
+
 class ViewerNode(TerrainBaseNode):
     """Sink node that controls what is shown in the terrain viewport."""
 
@@ -814,7 +894,7 @@ class ConstantNode(TerrainBaseNode):
         return payload
 
 
-class FBMNode(TerrainBaseNode):
+class FBMNode(FBMPreviewMixin, TerrainBaseNode):
     """Generate FBM noise."""
 
     NODE_NAME = "FBM Noise"
@@ -831,6 +911,7 @@ class FBMNode(TerrainBaseNode):
         self.add_text_input("lower", "Lower Bound", text="2.0")
         self.add_text_input("upper", "Upper Bound", text="inf")
         self.add_text_input("seed", "Seed", text="42")
+        self._setup_fbm_preview()
 
     def execute(self):
         dim = self.context.get_resolution()

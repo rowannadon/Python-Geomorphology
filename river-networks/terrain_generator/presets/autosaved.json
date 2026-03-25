@@ -53,8 +53,8 @@
       "node_type": "terrain.FBMNode",
       "name": "Base Noise",
       "pos": [
-        -2198.7397857587603,
-        -437.2244252208494
+        -2198.0,
+        -437.0
       ],
       "properties": {
         "scale": "-7.5",
@@ -118,8 +118,8 @@
       "node_type": "terrain.ThresholdFloodNode",
       "name": "Flood Coastline",
       "pos": [
-        -347.63405964191645,
-        27.337991479726213
+        -347.0,
+        27.0
       ],
       "properties": {
         "sea_level": "0.33"
@@ -169,8 +169,8 @@
       "node_type": "terrain.ApplyRiverDowncuttingNode",
       "name": "Apply River Downcutting",
       "pos": [
-        2361.0,
-        -25.0
+        2381.3433660983897,
+        -13.903618491787256
       ],
       "properties": {
         "river_downcutting": "2.5",
@@ -192,21 +192,21 @@
       "node_type": "terrain.ParticleErosionNode",
       "name": "Particle Erosion",
       "pos": [
-        3473.0,
-        113.0
+        3504.4397476066033,
+        116.69879383607088
       ],
       "properties": {
-        "erosion_iterations": "24000",
+        "erosion_iterations": "12000",
         "erosion_inertia": "0.3",
-        "erosion_capacity": "8.0",
-        "erosion_deposition_rate": "0.2",
-        "erosion_rate": "0.2",
+        "erosion_capacity": "8",
+        "erosion_deposition_rate": "0.25",
+        "erosion_rate": "0.05",
         "erosion_evaporation": "0.95",
-        "erosion_gravity": "5",
+        "erosion_gravity": "3",
         "erosion_max_lifetime": "60",
-        "erosion_step_size": "0.0026875",
+        "erosion_step_size": "0.0001",
         "erosion_blur_iterations": "1",
-        "max_delta": "0.05"
+        "max_delta": "0.08"
       }
     },
     {
@@ -214,8 +214,8 @@
       "node_type": "terrain.AssignRockLayersNode",
       "name": "Assign Rock Layers",
       "pos": [
-        1417.0,
-        -172.0
+        973.0,
+        -545.0
       ],
       "properties": {
         "layers_json": "rockmap.json",
@@ -248,8 +248,8 @@
       "node_type": "terrain.RockStackWarpNode",
       "name": "Rock Stack Warp",
       "pos": [
-        1902.0,
-        -118.0
+        1457.0,
+        -525.0
       ],
       "properties": {
         "rock_warp_strength": "0.8",
@@ -263,11 +263,11 @@
       "node_type": "terrain.ViewerNode",
       "name": "Viewer",
       "pos": [
-        5036.0,
-        -61.0
+        3497.936533216085,
+        -66.84807617372654
       ],
       "properties": {
-        "height_multiplier": 6.1,
+        "height_multiplier": 3.8,
         "overlay_opacity": 0.58
       }
     },
@@ -276,7 +276,7 @@
       "node_type": "terrain.ClimateHeuristicBundleNode",
       "name": "Climate Maps",
       "pos": [
-        3909.0,
+        3927.4939691803543,
         -157.0
       ],
       "properties": {
@@ -288,8 +288,8 @@
       "node_type": "terrain.TopographicHeuristicBundleNode",
       "name": "Topographic Maps",
       "pos": [
-        3916.0,
-        275.0
+        3932.6445722623193,
+        276.8493969180354
       ],
       "properties": {
         "cellsize_override": "0",
@@ -315,8 +315,8 @@
       "node_type": "terrain.ViewerNode",
       "name": "Viewer 1",
       "pos": [
-        -76.65324395997197,
-        450.76373700368197
+        -76.0,
+        450.0
       ],
       "properties": {
         "height_multiplier": 1.0,
@@ -328,8 +328,8 @@
       "node_type": "terrain.ThermalErosionNode",
       "name": "Thermal Erosion",
       "pos": [
-        3076.0,
-        113.0
+        3063.0542215737523,
+        199.92165514766646
       ],
       "properties": {
         "thermal_iterations": "30",
@@ -371,25 +371,12 @@
       }
     },
     {
-      "id": "afb8a30a67d4438d96a70d4269e0c804",
-      "node_type": "terrain.ViewerNode",
-      "name": "Viewer 2",
-      "pos": [
-        2665.9093344646326,
-        -385.55690533330835
-      ],
-      "properties": {
-        "height_multiplier": 1.0,
-        "overlay_opacity": 0.7
-      }
-    },
-    {
       "id": "8440d7c9686a4e409aad0052667e7c56",
       "node_type": "terrain.UnbundleTerrainBundleNode",
       "name": "Unbundle Terrain Bundle",
       "pos": [
-        3077.0376821817617,
-        -159.98632375756182
+        2811.0743550736884,
+        -100.57701164008256
       ],
       "properties": {}
     },
@@ -398,11 +385,56 @@
       "node_type": "terrain.CurveRemapNode",
       "name": "Curve Remap",
       "pos": [
-        -1898.6018190298266,
-        -322.2331211063009
+        -1898.0,
+        -322.0
       ],
       "properties": {
         "control_points": "0.0000:0.0000, 0.1350:0.3000, 0.2638:0.5250, 0.6196:0.4500, 1.0000:1.0000"
+      }
+    },
+    {
+      "id": "00916ac37efb4c45b92d954f9ee34f0a",
+      "node_type": "terrain.ViewerNode",
+      "name": "Viewer 3",
+      "pos": [
+        3291.102468130915,
+        -266.0241232785818
+      ],
+      "properties": {
+        "height_multiplier": 2.5,
+        "overlay_opacity": 0.7
+      }
+    },
+    {
+      "id": "c9091d3425b545e8929dc30e2d12993e",
+      "node_type": "terrain.MaxDeltaFBMGraphNode",
+      "name": "Graph Max Delta FBM",
+      "pos": [
+        1919.4930663532773,
+        -493.9167962393291
+      ],
+      "properties": {
+        "min_multiplier": "0.05",
+        "max_multiplier": "1.0",
+        "scale": "-6.2",
+        "octaves": "6",
+        "persistence": "0.5",
+        "lacunarity": "2.0",
+        "lower": "2.0",
+        "upper": "inf",
+        "seed": "42"
+      }
+    },
+    {
+      "id": "1ced7d6eb2864f1790f7324738af259b",
+      "node_type": "terrain.MaxDeltaCurveGraphNode",
+      "name": "Graph Max Delta Curve",
+      "pos": [
+        1405.0,
+        -230.0
+      ],
+      "properties": {
+        "control_points": "0.0000:0.1250, 0.0920:0.1250, 0.3190:0.9000, 1.0000:1.0000"
       }
     }
   ],
@@ -494,25 +526,19 @@
     {
       "source_node_id": "bundle",
       "source_port": "terrain_bundle",
-      "target_node_id": "afb8a30a67d4438d96a70d4269e0c804",
+      "target_node_id": "8440d7c9686a4e409aad0052667e7c56",
       "target_port": "terrain_bundle"
     },
     {
       "source_node_id": "bundle",
       "source_port": "terrain_bundle",
-      "target_node_id": "8440d7c9686a4e409aad0052667e7c56",
+      "target_node_id": "00916ac37efb4c45b92d954f9ee34f0a",
       "target_port": "terrain_bundle"
     },
     {
       "source_node_id": "erosion",
       "source_port": "terrain_bundle",
       "target_node_id": "48a8d1b0a334498d80bda00847cbd15d",
-      "target_port": "terrain_bundle"
-    },
-    {
-      "source_node_id": "erosion",
-      "source_port": "terrain_bundle",
-      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
       "target_port": "terrain_bundle"
     },
     {
@@ -548,7 +574,7 @@
     {
       "source_node_id": "f79c8337c75747e5940d8c8dbebef820",
       "source_port": "terrain_graph",
-      "target_node_id": "downcut",
+      "target_node_id": "1ced7d6eb2864f1790f7324738af259b",
       "target_port": "terrain_graph"
     },
     {
@@ -561,6 +587,12 @@
       "source_node_id": "64989528e5b24f6889fa2f09dc3837eb",
       "source_port": "terrain_bundle",
       "target_node_id": "erosion",
+      "target_port": "terrain_bundle"
+    },
+    {
+      "source_node_id": "64989528e5b24f6889fa2f09dc3837eb",
+      "source_port": "terrain_bundle",
+      "target_node_id": "f605a2791fea4302ba74044ceb9abeb1",
       "target_port": "terrain_bundle"
     },
     {
@@ -580,8 +612,20 @@
       "source_port": "heightfield",
       "target_node_id": "combine_seed",
       "target_port": "heightfield_a"
+    },
+    {
+      "source_node_id": "c9091d3425b545e8929dc30e2d12993e",
+      "source_port": "terrain_graph",
+      "target_node_id": "downcut",
+      "target_port": "terrain_graph"
+    },
+    {
+      "source_node_id": "1ced7d6eb2864f1790f7324738af259b",
+      "source_port": "terrain_graph",
+      "target_node_id": "c9091d3425b545e8929dc30e2d12993e",
+      "target_port": "terrain_graph"
     }
   ],
-  "pinned_node_id": "f605a2791fea4302ba74044ceb9abeb1",
+  "pinned_node_id": "00916ac37efb4c45b92d954f9ee34f0a",
   "metadata": {}
 }
