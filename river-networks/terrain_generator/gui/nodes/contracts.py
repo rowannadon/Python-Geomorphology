@@ -211,6 +211,7 @@ class TerrainGraphData(NodePayload):
     sampled_land_mask: Optional[np.ndarray] = None
     point_height: Optional[np.ndarray] = None
     variable_max_delta: Optional[np.ndarray] = None
+    max_delta_multipliers: Optional[np.ndarray] = None
     rock_stack_shifts: Optional[np.ndarray] = None
     rock_assignments: Optional[np.ndarray] = None
     rock_layers: Tuple[RockLayerConfig, ...] = field(default_factory=tuple)
@@ -226,6 +227,7 @@ class TerrainGraphData(NodePayload):
             ("sampled_land_mask", bool),
             ("point_height", np.float64),
             ("variable_max_delta", np.float64),
+            ("max_delta_multipliers", np.float64),
             ("rock_stack_shifts", np.float32),
             ("rock_assignments", np.int32),
         ):

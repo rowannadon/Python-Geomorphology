@@ -10,10 +10,11 @@ import matplotlib.tri as mtri
 import numpy as np
 
 from ...config import RockLayerConfig, normalize_layer_inputs
-from ...core import RiverGenerator, TerrainGenerator, TerrainParameters, normalize
+from ...core import ConsistentFBMNoise, RiverGenerator, TerrainGenerator, TerrainParameters, normalize
 from ...core.particle_erosion import ParticleErosion
 from ...core.thermal_erosion import ThermalErosion
 from ...core.utils import gaussian_gradient, render_triangulation
+from ..curves_widget import apply_curve_points, parse_curve_points
 from .base_nodes import TerrainBaseNode, _distance_km_to_cells, _parse_float, _parse_int, _parse_points_text
 from .contracts import (
     HeightfieldData,
@@ -31,6 +32,7 @@ from .contracts import (
     overlay_from_labels,
     overlay_from_scalar,
 )
+from .node_widgets import CurveEditorNodeWidget
 
 
 def _make_generator(*, context=None, **kwargs: Any) -> TerrainGenerator:
@@ -252,6 +254,114 @@ class TerraceMaxDeltaNode(TerrainBaseNode):
         return updated
 
 
+class MaxDeltaCurveGraphNode(TerrainBaseNode):
+    """Scale graph max-delta constraints with a height-driven curve."""
+
+    NODE_NAME = "Graph Max Delta Curve"
+    INPUT_TYPES = {"terrain_graph": (PORT_TYPE_TERRAIN_GRAPH,)}
+    OUTPUT_TYPES = {"terrain_graph": (PORT_TYPE_TERRAIN_GRAPH,)}
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(165, 105, 145)
+        self.add_input("terrain_graph", color=(180, 120, 200))
+        self.add_output("terrain_graph", color=(180, 120, 200))
+        curve_widget = CurveEditorNodeWidget(
+            self.view,
+            "control_points",
+            "Multiplier Curve",
+            value="0.0:1.0, 1.0:1.0",
+        )
+        self.add_custom_widget(curve_widget)
+
+    def execute(self):
+        graph = self.get_input_data("terrain_graph", expected_types=(PORT_TYPE_TERRAIN_GRAPH,))
+        if graph.point_height is None:
+            raise ValueError("Graph Max Delta Curve requires graph point heights.")
+        if graph.points.size == 0:
+            updated = graph.with_updates(max_delta_multipliers=np.ones(0, dtype=np.float64))
+            self.set_output_data(updated)
+            return updated
+
+        normalized_heights = normalize(np.asarray(graph.point_height, dtype=np.float64), bounds=(0, 1))
+        points = parse_curve_points(
+            self.get_property("control_points"),
+            fallback=[(0.0, 1.0), (1.0, 1.0)],
+            clamp_output=True,
+        )
+        multipliers = np.clip(apply_curve_points(normalized_heights, points), 0.0, None).astype(np.float64)
+        if graph.max_delta_multipliers is not None:
+            if graph.max_delta_multipliers.shape != multipliers.shape:
+                raise ValueError("Existing max-delta multipliers do not match graph point heights.")
+            multipliers = np.asarray(graph.max_delta_multipliers, dtype=np.float64) * multipliers
+        updated = graph.with_updates(max_delta_multipliers=multipliers)
+        self.set_output_data(updated)
+        return updated
+
+
+class MaxDeltaFBMGraphNode(TerrainBaseNode):
+    """Scale graph max-delta constraints with configurable FBM noise."""
+
+    NODE_NAME = "Graph Max Delta FBM"
+    INPUT_TYPES = {"terrain_graph": (PORT_TYPE_TERRAIN_GRAPH,)}
+    OUTPUT_TYPES = {"terrain_graph": (PORT_TYPE_TERRAIN_GRAPH,)}
+
+    def __init__(self):
+        super().__init__()
+        self.set_color(120, 105, 165)
+        self.add_input("terrain_graph", color=(180, 120, 200))
+        self.add_output("terrain_graph", color=(180, 120, 200))
+        self.add_text_input("min_multiplier", "Min Multiplier", text="1.0")
+        self.add_text_input("max_multiplier", "Max Multiplier", text="1.0")
+        self.add_text_input("scale", "Scale", text="-6.0")
+        self.add_text_input("octaves", "Octaves", text="6")
+        self.add_text_input("persistence", "Persistence", text="0.5")
+        self.add_text_input("lacunarity", "Lacunarity", text="2.0")
+        self.add_text_input("lower", "Lower Bound", text="2.0")
+        self.add_text_input("upper", "Upper Bound", text="inf")
+        self.add_text_input("seed", "Seed", text="42")
+
+    def execute(self):
+        graph = self.get_input_data("terrain_graph", expected_types=(PORT_TYPE_TERRAIN_GRAPH,))
+        if graph.points.size == 0:
+            updated = graph.with_updates(max_delta_multipliers=np.ones(0, dtype=np.float64))
+            self.set_output_data(updated)
+            return updated
+
+        min_multiplier = max(0.0, _parse_float(self.get_property("min_multiplier"), 1.0))
+        max_multiplier = max(0.0, _parse_float(self.get_property("max_multiplier"), 1.0))
+        seed = _parse_int(self.get_property("seed"), self.context.get_seed())
+        noise = ConsistentFBMNoise(
+            scale=_parse_float(self.get_property("scale"), -6.0),
+            octaves=max(1, _parse_int(self.get_property("octaves"), 6)),
+            persistence=_parse_float(self.get_property("persistence"), 0.5),
+            lacunarity=_parse_float(self.get_property("lacunarity"), 2.0),
+            lower=_parse_float(self.get_property("lower"), 2.0),
+            upper=_parse_float(self.get_property("upper"), float("inf")),
+            seed_offset=3000,
+            base_seed=seed,
+        )
+        self.emit_progress(0.15, "Generating max-delta FBM")
+        noise_field = noise.generate((graph.dimension, graph.dimension))
+        self.check_cancelled()
+
+        coords = np.empty((graph.points.shape[0], 2), dtype=np.int64)
+        coords[:, 0] = np.floor(graph.points[:, 1]).astype(np.int64)
+        coords[:, 1] = np.floor(graph.points[:, 0]).astype(np.int64)
+        np.clip(coords[:, 0], 0, graph.dimension - 1, out=coords[:, 0])
+        np.clip(coords[:, 1], 0, graph.dimension - 1, out=coords[:, 1])
+        samples = np.asarray(noise_field[coords[:, 0], coords[:, 1]], dtype=np.float64)
+        multipliers = min_multiplier + (max_multiplier - min_multiplier) * np.clip(samples, 0.0, 1.0)
+        if graph.max_delta_multipliers is not None:
+            if graph.max_delta_multipliers.shape != multipliers.shape:
+                raise ValueError("Existing max-delta multipliers do not match graph samples.")
+            multipliers = np.asarray(graph.max_delta_multipliers, dtype=np.float64) * multipliers
+        updated = graph.with_updates(max_delta_multipliers=np.asarray(multipliers, dtype=np.float64))
+        self.emit_progress(1.0, "Max-delta FBM ready")
+        self.set_output_data(updated)
+        return updated
+
+
 class RockStackWarpNode(TerrainBaseNode):
     """Attach a rock-stack shift field to a graph."""
 
@@ -450,6 +560,7 @@ class ApplyRiverDowncuttingNode(TerrainBaseNode):
             np.asarray(graph.sampled_deltas, dtype=np.float64),
             network_payload,
             variable_max_delta=graph.variable_max_delta,
+            max_delta_multipliers=graph.max_delta_multipliers,
             rock_assignments=graph.rock_assignments,
             rock_parameters=list(graph.rock_parameters) if graph.rock_parameters else None,
         )
@@ -475,7 +586,7 @@ class RasterizeGraphFieldNode(TerrainBaseNode):
         self.add_input("terrain_graph", color=(180, 120, 200))
         self.add_input("river_network", color=(100, 160, 220))
         self.add_output("heightfield", color=(150, 200, 150))
-        self.add_combo_menu("field_name", "Field", items=["point_height", "variable_max_delta", "rock_assignments", "river_volume"])
+        self.add_combo_menu("field_name", "Field", items=["point_height", "variable_max_delta", "max_delta_multipliers", "rock_assignments", "river_volume"])
         self.set_property("field_name", "point_height")
 
     def execute(self):
@@ -489,6 +600,10 @@ class RasterizeGraphFieldNode(TerrainBaseNode):
             if graph.variable_max_delta is None:
                 raise ValueError("Graph has no variable max-delta field.")
             arr = _rasterize_graph_height(graph, graph.variable_max_delta)
+        elif field_name == "max_delta_multipliers":
+            if graph.max_delta_multipliers is None:
+                raise ValueError("Graph has no max-delta multiplier field.")
+            arr = _rasterize_graph_height(graph, graph.max_delta_multipliers)
         elif field_name == "rock_assignments":
             if graph.rock_assignments is None:
                 raise ValueError("Graph has no rock assignments.")

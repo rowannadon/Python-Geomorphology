@@ -921,22 +921,19 @@ class TerrainGenerator:
             result = result / max_height
         return result
 
-    def _compute_final_height(self, points: np.ndarray, neighbors: List[np.ndarray],
-                          edge_weights: List[np.ndarray], deltas: np.ndarray,
-                          river_network: RiverNetwork,
-                          variable_max_delta: Optional[np.ndarray] = None,
-                          rock_assignments: Optional[np.ndarray] = None,
-                          rock_parameters: Optional[List[Dict[str, float]]] = None
-                          ) -> np.ndarray:
-        """Compute final height with river downcutting (Numba-accelerated edge costs)."""
-
-        # Flatten to CSR once
-        indptr, indices, row_indices, weights = self._prepare_graph(neighbors, edge_weights)
-        dim = len(points)
-
+    def _resolve_graph_erosion_parameters(
+        self,
+        node_count: int,
+        *,
+        variable_max_delta: Optional[np.ndarray] = None,
+        max_delta_multipliers: Optional[np.ndarray] = None,
+        rock_assignments: Optional[np.ndarray] = None,
+        rock_parameters: Optional[List[Dict[str, float]]] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Resolve per-node erosion parameters for graph-based terrain solves."""
         # Per-node max_delta and downcut power (layer-aware)
-        node_max_delta = np.full(dim, float(self.params.max_delta), dtype=np.float64)
-        downcut_power = np.full(dim, float(self.params.river_downcutting), dtype=np.float64)
+        node_max_delta = np.full(node_count, float(self.params.max_delta), dtype=np.float64)
+        downcut_power = np.full(node_count, float(self.params.river_downcutting), dtype=np.float64)
 
         if rock_assignments is not None and rock_parameters:
             layer_max_delta = np.asarray(
@@ -962,10 +959,41 @@ class TerrainGenerator:
                 node_max_delta = layer_max_delta[clipped]
                 downcut_power = layer_downcut[clipped]
 
+        if max_delta_multipliers is not None:
+            multipliers = np.asarray(max_delta_multipliers, dtype=np.float64)
+            if multipliers.shape != node_max_delta.shape:
+                raise ValueError("Max-delta multipliers must match the number of graph samples.")
+            np.multiply(node_max_delta, np.maximum(multipliers, 0.0), out=node_max_delta)
+
         # Apply variable max delta (min with per-node)
         if variable_max_delta is not None:
+            variable_max_delta = np.asarray(variable_max_delta, dtype=np.float64)
+            if variable_max_delta.shape != node_max_delta.shape:
+                raise ValueError("Variable max-delta field must match the number of graph samples.")
             np.minimum(node_max_delta, variable_max_delta, out=node_max_delta)
+        return node_max_delta, downcut_power
 
+    def _compute_final_height(self, points: np.ndarray, neighbors: List[np.ndarray],
+                          edge_weights: List[np.ndarray], deltas: np.ndarray,
+                          river_network: RiverNetwork,
+                          variable_max_delta: Optional[np.ndarray] = None,
+                          max_delta_multipliers: Optional[np.ndarray] = None,
+                          rock_assignments: Optional[np.ndarray] = None,
+                          rock_parameters: Optional[List[Dict[str, float]]] = None
+                          ) -> np.ndarray:
+        """Compute final height with river downcutting (Numba-accelerated edge costs)."""
+
+        # Flatten to CSR once
+        indptr, indices, row_indices, weights = self._prepare_graph(neighbors, edge_weights)
+        dim = len(points)
+
+        node_max_delta, downcut_power = self._resolve_graph_erosion_parameters(
+            dim,
+            variable_max_delta=variable_max_delta,
+            max_delta_multipliers=max_delta_multipliers,
+            rock_assignments=rock_assignments,
+            rock_parameters=rock_parameters,
+        )
         # Precompute upstream mask per edge using downstream links.
         downstream_raw = river_network.downstream
         if isinstance(downstream_raw, np.ndarray):

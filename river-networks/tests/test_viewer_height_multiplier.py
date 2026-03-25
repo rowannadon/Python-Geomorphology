@@ -12,6 +12,16 @@ def _load_contracts_module():
     terrain_pkg = sys.modules.setdefault("terrain_generator", types.ModuleType("terrain_generator"))
     terrain_pkg.__path__ = [str(package_root)]
 
+    core_spec = importlib.util.spec_from_file_location(
+        "terrain_generator.core",
+        package_root / "core" / "__init__.py",
+        submodule_search_locations=[str(package_root / "core")],
+    )
+    core_module = importlib.util.module_from_spec(core_spec)
+    sys.modules[core_spec.name] = core_module
+    assert core_spec.loader is not None
+    core_spec.loader.exec_module(core_module)
+
     gui_pkg = sys.modules.setdefault("terrain_generator.gui", types.ModuleType("terrain_generator.gui"))
     gui_pkg.__path__ = [str(package_root / "gui")]
 
